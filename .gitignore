@@ -1,35 +1,70 @@
-@"
 # Environment files
 .env
 .env.*
 !.env.example
 Frontend/.env
+backend/.env
 Backend/.env
 
 # Dependencies
 node_modules/
 Frontend/node_modules/
+backend/node_modules/
 Backend/node_modules/
 
-# Build files
+# Build & Distribution
 dist/
+dist-ssr/
 Frontend/dist/
 Backend/dist/
+build/
+*.egg-info/
 
-# AI models
+# AI Models & Large Weights
 models/
 *.gguf
+*.bin
+*.pt
+*.pth
+*.onnx
 
-# Python
+# Python & Virtual Environments
 __pycache__/
 *.py[cod]
+*$py.class
 .venv/
 venv/
+ENV/
+env/
+backend/.venv/
+backend/venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Media & Uploads
+media/
+backend/media/
+uploads/
+
+# Caches
+.cache/
 
 # Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# IDE
+# IDE & OS Files
 .vscode/
 .idea/
-"@ | Set-Content .gitignore
+.DS_Store
+Thumbs.db

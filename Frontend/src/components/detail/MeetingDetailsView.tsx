@@ -11,11 +11,13 @@ import { TranscriptCard } from './TranscriptCard';
 interface MeetingDetailsViewProps {
   meeting?: MeetingDetail | null;
   onBack?: () => void;
+  onToggleActionItem?: (id: string) => void;
 }
 
 export const MeetingDetailsView: React.FC<MeetingDetailsViewProps> = ({
   meeting,
   onBack,
+  onToggleActionItem,
 }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript'>('summary');
   const [seekTime, setSeekTime] = useState<number | null>(null);
@@ -85,7 +87,11 @@ export const MeetingDetailsView: React.FC<MeetingDetailsViewProps> = ({
                 <OverviewCard overview={meeting.summary?.overview} />
 
                 {/* Key points Card (4 Quadrants) */}
-                <KeyPointsCard summary={meeting.summary} />
+                <KeyPointsCard
+                  summary={meeting.summary}
+                  meetingId={meeting.id}
+                  onToggleActionItem={onToggleActionItem}
+                />
               </>
             ) : (
               <div className="bg-white rounded-2xl p-8 text-center border border-[#ececf4] shadow-[0_2px_8px_rgba(0,0,0,0.02)] space-y-2">

@@ -2,12 +2,22 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useMeetingDetail } from '../hooks/useMeetingDetail';
 import { MeetingDetailsView } from '../components/detail/MeetingDetailsView';
+import { Toast } from '../components/common/Toast';
 import { ROUTES } from '../constants/routes';
 
 export const MeetingDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { meeting, isLoading, error, refetch } = useMeetingDetail(id);
+  const {
+    meeting,
+    isLoading,
+    error,
+    refetch,
+    toggleActionItem,
+    toastMessage,
+    toastType,
+    clearToast,
+  } = useMeetingDetail(id);
 
   if (isLoading) {
     return (
@@ -45,7 +55,16 @@ export const MeetingDetailPage: React.FC = () => {
       <MeetingDetailsView
         meeting={meeting}
         onBack={() => navigate(ROUTES.HOME)}
+        onToggleActionItem={toggleActionItem}
       />
+      {toastMessage && (
+        <Toast
+          isOpen={!!toastMessage}
+          message={toastMessage}
+          onClose={clearToast}
+          type={toastType}
+        />
+      )}
     </div>
   );
 };

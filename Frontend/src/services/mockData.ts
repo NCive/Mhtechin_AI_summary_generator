@@ -34,9 +34,9 @@ export const INITIAL_MEETINGS: MeetingDetail[] = [
         { id: 'cf-3', title: 'Need for better monitoring tools', severity: 'medium', description: 'Need for better monitoring tools in production cluster' },
       ],
       actionItems: [
-        { id: 'ai-1', task: 'Optimize API retry logic to handle variable latency', completed: false, assignee: 'Brian Walker' },
-        { id: 'ai-2', task: 'Finalize data normalization script for core-to-cloud sync.', completed: false, assignee: 'Alex Brown' },
-        { id: 'ai-3', task: 'Schedule next review meeting', completed: true, assignee: 'Emily Wilson' },
+        { id: 'ai-1', task: 'Optimize API retry logic to handle variable latency', done: false, completed: false, assignee: 'Brian Walker' },
+        { id: 'ai-2', task: 'Finalize data normalization script for core-to-cloud sync.', done: false, completed: false, assignee: 'Alex Brown' },
+        { id: 'ai-3', task: 'Schedule next review meeting', done: true, completed: true, assignee: 'Emily Wilson' },
       ],
       nextSteps: [
         'Improve API handling',
@@ -244,8 +244,8 @@ export const INITIAL_MEETINGS: MeetingDetail[] = [
         { id: 'sc-2', title: 'Intermittent token renewal timeouts', severity: 'medium' },
       ],
       actionItems: [
-        { id: 'sa-1', task: 'Finalize user onboarding tooltips', completed: false, assignee: 'Brian Walker' },
-        { id: 'sa-2', task: 'Set up synthetic monitoring for feature launch', completed: false, assignee: 'Alex Brown' },
+        { id: 'sa-1', task: 'Finalize user onboarding tooltips', done: false, completed: false, assignee: 'Brian Walker' },
+        { id: 'sa-2', task: 'Set up synthetic monitoring for feature launch', done: false, completed: false, assignee: 'Alex Brown' },
       ],
       nextSteps: [
         'Begin phased rollout to 10% beta cohort',

@@ -85,7 +85,7 @@ In [`MeetingDetailsView.tsx`](file:///d:/MHTechin/Mhtechin_AI_summary_generator/
 
 ## 3. Backend API Contract Implementation
 
-All communication is strictly confined to the exact four required endpoints in `src/services/meetingService.ts`:
+All communication is strictly confined to the required endpoints in `src/services/meetingService.ts`:
 
 | # | Method | Path | Request Body / Query | Return Model |
 |---|--------|------|----------------------|--------------|
@@ -93,6 +93,7 @@ All communication is strictly confined to the exact four required endpoints in `
 | 2 | `POST` | `/api/v1/meetings/upload` | `FormData(file, language, slot_name)` | `MeetingDetail` / `{ meeting_id }` |
 | 3 | `GET` | `/api/v1/meetings` | Optional `?q={query}` (moment search) | `Meeting[]` |
 | 4 | `GET` | `/api/v1/meetings/{meeting_id}` | Path parameter `meeting_id` | `MeetingDetail` |
+| 5 | `PATCH` | `/api/v1/meetings/{meeting_id}/action-items/{item_id}` | `{ done: boolean }` | `ActionItem` |
 
 ---
 

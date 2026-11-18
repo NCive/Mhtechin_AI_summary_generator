@@ -2,6 +2,7 @@ export type MeetingStatus = 'completed' | 'processing' | 'scheduled' | 'failed';
 
 export interface ActionItem {
   id?: string;
+  done?: boolean;
   task: string;
   assignee?: string;
   assigneeAvatar?: string;

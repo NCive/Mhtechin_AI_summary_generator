@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FileText,
   TrendingUp,
@@ -10,17 +10,24 @@ import {
 } from 'lucide-react';
 import { MeetingSummary, ProgressItem, ChallengeItem, ActionItem } from '../../types/meeting';
 import { Badge } from '../common/Badge';
+import { Toast } from '../common/Toast';
 import { formatSimpleDate } from '../../utils/formatters';
+import { updateActionItem } from '../../services/meetingService';
 
 interface SummaryTabProps {
   summary?: MeetingSummary | null;
-  onToggleActionItem?: (id: string) => void;
+  meetingId?: string;
+  onToggleActionItem?: (id: string) => void | Promise<void>;
 }
 
 export const SummaryTab: React.FC<SummaryTabProps> = ({
   summary,
+  meetingId,
   onToggleActionItem,
 }) => {
+  const [localDoneState, setLocalDoneState] = useState<Record<string, boolean>>({});
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   if (!summary) {
     return (
       <div className="bg-white rounded-xl border border-slate-200/90 p-8 text-center text-xs text-slate-400">
@@ -79,10 +86,34 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
   const actionList: ActionItem[] = Array.isArray(rawActions)
     ? rawActions.map((item, idx) =>
         typeof item === 'string'
-          ? { id: `act-${idx}`, task: item, completed: false }
-          : item
+          ? { id: `act-${idx}`, task: item, completed: false, done: false }
+          : { ...item, id: item.id || `act-${idx}`, done: item.done ?? item.completed ?? false }
       )
     : [];
+
+  const handleToggle = async (itemId?: string) => {
+    if (!itemId) return;
+    if (onToggleActionItem) {
+      onToggleActionItem(itemId);
+      return;
+    }
+    if (!meetingId) return;
+
+    const item = actionList.find((it) => it.id === itemId);
+    const prevDone = localDoneState[itemId] ?? Boolean(item?.done ?? item?.completed);
+    const nextDone = !prevDone;
+
+    // Tick immediately
+    setLocalDoneState((prev) => ({ ...prev, [itemId]: nextDone }));
+
+    try {
+      await updateActionItem(meetingId, itemId, { done: nextDone });
+    } catch (err: unknown) {
+      // Revert & toast
+      setLocalDoneState((prev) => ({ ...prev, [itemId]: prevDone }));
+      setToastMessage((err as Error)?.message || 'Failed to update action item.');
+    }
+  };
 
   const nextList: string[] = Array.isArray(rawNext)
     ? rawNext.map((item) => (typeof item === 'string' ? item : String(item)))
@@ -179,39 +210,41 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
           </div>
           {actionList.length > 0 && (
             <span className="text-xs text-slate-500 font-medium">
-              {actionList.filter((a) => a.completed).length} / {actionList.length} Done
+              {actionList.filter((a) => Boolean(localDoneState[a.id!] ?? (a.done ?? a.completed))).length} / {actionList.length} Done
             </span>
           )}
         </div>
 
         {actionList.length > 0 ? (
           <div className="space-y-2.5">
-            {actionList.map((item) => (
-              <div
-                key={item.id || item.task}
-                onClick={() => item.id && onToggleActionItem && onToggleActionItem(item.id)}
-                className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
-                  item.completed
-                    ? 'bg-slate-50 border-slate-200 text-slate-400'
-                    : 'bg-white border-slate-200 hover:border-indigo-300 shadow-2xs'
-                }`}
-              >
-                <button
-                  type="button"
-                  className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center transition-colors shrink-0 ${
-                    item.completed ? 'bg-emerald-600 text-white' : 'border border-slate-300 hover:border-indigo-500'
+            {actionList.map((item) => {
+              const isDone = Boolean(localDoneState[item.id!] ?? (item.done ?? item.completed));
+              return (
+                <div
+                  key={item.id || item.task}
+                  onClick={() => item.id && handleToggle(item.id)}
+                  className={`flex items-start gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
+                    isDone
+                      ? 'bg-slate-50 border-slate-200 text-slate-400'
+                      : 'bg-white border-slate-200 hover:border-indigo-300 shadow-2xs'
                   }`}
-                  aria-label={item.completed ? 'Mark incomplete' : 'Mark complete'}
                 >
-                  {item.completed && <Check className="w-3 h-3 stroke-3" />}
-                </button>
-
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm font-medium leading-snug ${
-                      item.completed ? 'line-through text-slate-400' : 'text-slate-800'
+                  <button
+                    type="button"
+                    className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center transition-colors shrink-0 ${
+                      isDone ? 'bg-emerald-600 text-white' : 'border border-slate-300 hover:border-indigo-500'
                     }`}
+                    aria-label={isDone ? 'Mark incomplete' : 'Mark complete'}
                   >
+                    {isDone && <Check className="w-3 h-3 stroke-3" />}
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className={`text-sm font-medium leading-snug ${
+                        isDone ? 'line-through text-slate-400' : 'text-slate-800'
+                      }`}
+                    >
                     {item.task}
                   </p>
 
@@ -241,7 +274,8 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                   </div>
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         ) : (
           <p className="text-xs text-slate-500 italic">No action items defined.</p>
@@ -271,6 +305,16 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
           <p className="text-xs text-slate-500 italic">No next steps documented.</p>
         )}
       </section>
+
+      {/* Standalone Error Toast */}
+      {toastMessage && (
+        <Toast
+          isOpen={!!toastMessage}
+          message={toastMessage}
+          onClose={() => setToastMessage(null)}
+          type="error"
+        />
+      )}
     </div>
   );
 };

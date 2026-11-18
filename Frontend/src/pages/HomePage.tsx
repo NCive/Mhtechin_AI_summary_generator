@@ -31,6 +31,10 @@ export const HomePage: React.FC = () => {
     isLoading: isLoadingDetail,
     error: detailError,
     refetch: refetchDetail,
+    toggleActionItem,
+    toastMessage: detailToastMessage,
+    toastType: detailToastType,
+    clearToast: clearDetailToast,
   } = useMeetingDetail(selectedMeetingId);
 
   // Sync default selected meeting
@@ -135,6 +139,7 @@ export const HomePage: React.FC = () => {
                   setSelectedMeetingId(meetings[0].id);
                 }
               }}
+              onToggleActionItem={toggleActionItem}
             />
           )}
         </div>
@@ -147,6 +152,14 @@ export const HomePage: React.FC = () => {
           message={toastMessage}
           onClose={() => setToastMessage(null)}
           type={toastType}
+        />
+      )}
+      {detailToastMessage && (
+        <Toast
+          isOpen={!!detailToastMessage}
+          message={detailToastMessage}
+          onClose={clearDetailToast}
+          type={detailToastType}
         />
       )}
     </div>

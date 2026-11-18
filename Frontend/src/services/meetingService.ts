@@ -2,6 +2,7 @@ import { apiClient } from './api';
 import {
   Meeting,
   MeetingDetail,
+  ActionItem,
   JoinMeetingPayload,
   UploadMeetingPayload,
 } from '../types/meeting';
@@ -48,7 +49,7 @@ export async function joinMeeting(payload: JoinMeetingPayload): Promise<MeetingD
           ],
           challengesFaced: [],
           actionItems: [
-            { id: `a-${Date.now()}-1`, task: 'Follow up on online discussion items', assignee: 'Me', dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], completed: false, priority: 'medium' },
+            { id: `a-${Date.now()}-1`, task: 'Follow up on online discussion items', assignee: 'Me', dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], done: false, completed: false, priority: 'medium' },
           ],
           nextSteps: ['Review generated summary and distribute to attendees.'],
         },
@@ -126,7 +127,7 @@ export async function uploadMeeting(payload: UploadMeetingPayload): Promise<Meet
           ],
           challengesFaced: [],
           actionItems: [
-            { id: `a-${Date.now()}-1`, task: 'Review transcript timestamps and accuracy', assignee: 'Me', dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], completed: false, priority: 'high' },
+            { id: `a-${Date.now()}-1`, task: 'Review transcript timestamps and accuracy', assignee: 'Me', dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], done: false, completed: false, priority: 'high' },
           ],
           nextSteps: ['Share summary link with team members.', 'Export PDF report for archiving.'],
         },
@@ -229,3 +230,78 @@ export async function getMeetingById(meetingId: string): Promise<MeetingDetail> 
     throw error;
   }
 }
+
+/**
+ * 5. PATCH /api/v1/meetings/{meeting_id}/action-items/{item_id}
+ * Update action item status with body { done: boolean }, returning the updated action item
+ */
+export async function updateActionItem(
+  meetingId: string,
+  itemId: string,
+  body: { done: boolean } | boolean
+): Promise<ActionItem> {
+  const payload = typeof body === 'boolean' ? { done: body } : body;
+  try {
+    const response = await apiClient.patch(
+      `/meetings/${meetingId}/action-items/${itemId}`,
+      payload
+    );
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
+    return response.data;
+  } catch (error) {
+    if (APP_CONFIG.ENABLE_MOCK_FALLBACK) {
+      console.warn('[meetingService] Real API unreachable, using mock store fallback for updateActionItem');
+      const meeting = localMeetings.find((m) => m.id === meetingId);
+      if (!meeting) {
+        throw new Error(`Meeting with ID ${meetingId} not found.`);
+      }
+
+      let updatedItem: ActionItem | null = null;
+      const updateList = (items?: (string | ActionItem)[]) => {
+        if (!items || !Array.isArray(items)) return items;
+        return items.map((it) => {
+          if (typeof it === 'string') return it;
+          if (it.id === itemId) {
+            updatedItem = {
+              ...it,
+              id: it.id,
+              done: payload.done,
+              completed: payload.done,
+            };
+            return updatedItem;
+          }
+          return it;
+        });
+      };
+
+      if (meeting.summary) {
+        if (meeting.summary.actionItems) {
+          meeting.summary.actionItems = updateList(meeting.summary.actionItems);
+        }
+        if (meeting.summary.action_items) {
+          meeting.summary.action_items = updateList(meeting.summary.action_items);
+        }
+        if (meeting.summary.key_points?.action_items) {
+          meeting.summary.key_points.action_items = updateList(meeting.summary.key_points.action_items);
+        }
+      }
+
+      if (updatedItem) {
+        return updatedItem;
+      }
+
+      const fallbackItem: ActionItem = {
+        id: itemId,
+        task: 'Action item',
+        done: payload.done,
+        completed: payload.done,
+      };
+      return fallbackItem;
+    }
+    throw error;
+  }
+}
+
+export const patchActionItem = updateActionItem;
