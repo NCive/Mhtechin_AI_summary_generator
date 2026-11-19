@@ -41,6 +41,7 @@ def health_check():
     return {"status": "ok"}
 
 
-# Router include (empty for now)
+from app.routers.meetings import router as meetings_router
 api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(meetings_router)
 app.include_router(api_router)
