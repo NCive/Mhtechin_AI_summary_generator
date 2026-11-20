@@ -2,22 +2,22 @@
 .env
 .env.*
 !.env.example
+*.local
 Frontend/.env
 backend/.env
 Backend/.env
 
 # Dependencies
 node_modules/
-Frontend/node_modules/
-backend/node_modules/
-Backend/node_modules/
+**/node_modules/
 
 # Build & Distribution
 dist/
 dist-ssr/
-Frontend/dist/
-Backend/dist/
 build/
+**/dist/
+**/dist-ssr/
+**/build/
 *.egg-info/
 
 # AI Models & Large Weights
@@ -30,15 +30,19 @@ models/
 
 # Python & Virtual Environments
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 ENV/
 env/
-backend/.venv/
-backend/venv/
+**/.venv/
+**/venv/
 .pytest_cache/
+**/.pytest_cache/
+.ruff_cache/
+**/.ruff_cache/
 .coverage
 htmlcov/
 
@@ -52,19 +56,36 @@ htmlcov/
 media/
 backend/media/
 uploads/
+**/media/
+**/uploads/
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.webm
+*.mov
 
 # Caches
 .cache/
+**/.cache/
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 
 # IDE & OS Files
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 .DS_Store
 Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -24,8 +24,9 @@ cors_origins = (
     if isinstance(settings.CORS_ORIGINS, list)
     else [settings.CORS_ORIGINS]
 )
-if "http://localhost:3000" not in cors_origins:
-    cors_origins.append("http://localhost:3000")
+for o in ("http://localhost:3000", "http://127.0.0.1:3000"):
+    if o not in cors_origins:
+        cors_origins.append(o)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +35,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Root endpoint
+@app.get("/")
+def root():
+    return {
+        "name": "Chatmeet Backend API",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health",
+        "frontend": "http://localhost:3000",
+    }
+
 
 # Root health check endpoint
 @app.get("/health")

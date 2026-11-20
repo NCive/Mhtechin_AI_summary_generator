@@ -17,7 +17,7 @@ This document identifies differences between the frontend TypeScript types in `F
 | `source_url` (TEXT) | `meetingUrl` (string) | **Name mismatch**: DB uses `source_url`, frontend uses `meetingUrl`. |
 | `media_path` (TEXT) | `mediaUrl` (string) | **Name & semantic mismatch**: DB stores local server filesystem path (`media_path`), frontend expects a playable HTTP URL (`mediaUrl`). |
 | `media_type` ('video' \| 'audio') | *(Not defined on model)* | DB tracks media type; frontend assumes video with fallback audio. |
-| `status` ('pending' \| 'processing' \| 'done' \| 'failed') | `status` ('completed' \| 'processing' \| 'scheduled' \| 'failed') | **Enum value mismatch**: DB uses `'pending'` and `'done'`, frontend uses `'scheduled'` and `'completed'`. |
+| `status` ('pending' \| 'processing' \| 'done' \| 'failed') | `status` ('completed' \| 'processing' \| 'scheduled' \| 'failed') | **Enum value mismatch**: DB uses `'pending'` and `'done'`, frontend uses `'scheduled'` and `'completed'`. Note: Frontend `MeetingStatus` explicitly accepts `'processing'` and `'failed'` directly. |
 | `error` (TEXT) | *(Not defined on model)* | DB persists error strings; frontend handles errors via HTTP responses. |
 | `duration_seconds` (REAL) | `durationSeconds` (number) | **Casing mismatch**: `duration_seconds` vs `durationSeconds`. |
 | `processed_seconds` (REAL) | *(Not defined on model)* | DB tracks ingestion progress; frontend does not have this field. |
@@ -105,3 +105,21 @@ This document identifies differences between the frontend TypeScript types in `F
 3. **Patch Action Item**:
    - Frontend sends: `PATCH /api/v1/meetings/{meeting_id}/action-items/{item_id}` with `{ done: boolean }`.
    - Backend DB stores: `action_items.done` as integer `1` or `0`.
+
+---
+
+## 7. Status Type Verification (`Frontend/src/types/meeting.ts`)
+
+Inspection of `Frontend/src/types/meeting.ts` (line 1):
+```typescript
+export type MeetingStatus = 'completed' | 'processing' | 'scheduled' | 'failed';
+```
+- **Acceptance of `processing` and `failed`**: **YES**. The frontend type definition explicitly accepts `'processing'` and `'failed'` directly.
+- **Mapping behavior**:
+  - Backend database stores: `'pending'`, `'done'`, `'processing'`, `'failed'`.
+  - Backend response mapper (`app/services/mappers.py`) dynamically maps:
+    - `'pending'` -> `'scheduled'`
+    - `'done'` -> `'completed'`
+    - `'processing'` -> `'processing'` (unchanged)
+    - `'failed'` -> `'failed'` (unchanged)
+  - The stored database value is never altered.

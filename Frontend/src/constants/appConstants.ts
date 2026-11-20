@@ -1,8 +1,8 @@
 export const APP_CONFIG = {
   APP_NAME: 'Chatmeet',
   APP_TAGLINE: 'AI Meeting Intelligence & Automated Summaries',
-  API_BASE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '/api/v1',
-  ENABLE_MOCK_FALLBACK: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ENABLE_MOCK_FALLBACK) !== 'false',
+  API_BASE_URL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || 'http://localhost:8000/api/v1',
+  ENABLE_MOCK_FALLBACK: false,
   SUPPORTED_LANGUAGES: [
     { code: 'en', label: 'English (US)' },
     { code: 'en-GB', label: 'English (UK)' },

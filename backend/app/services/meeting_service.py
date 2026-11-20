@@ -1,14 +1,22 @@
-import os
-import uuid
+from datetime import UTC, datetime
 import mimetypes
+import os
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
+import uuid
 
-from fastapi import UploadFile, HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.core.config import settings
 from app.db.database import get_db
+from app.services.mappers import (
+    map_action_item_response,
+    map_join_upload_response,
+    map_meeting_detail,
+    map_meeting_list_item,
+)
 
 # Helper functions
 def _media_category(mime_type: Optional[str]) -> str:
@@ -23,8 +31,8 @@ def _media_category(mime_type: Optional[str]) -> str:
         return 'audio'
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Unsupported media type')
 
+def _validate_meeting_url(url: str):
     """Validate that URL uses https and host is allowed."""
-    from urllib.parse import urlparse
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="URL must use https.")
@@ -70,18 +78,20 @@ def _save_upload_file(file: UploadFile, meeting_id: str) -> Path:
 def join_meeting(meeting_url: str, language: str, slot_name: str) -> dict:
     _validate_meeting_url(meeting_url)
     meeting_id = str(uuid.uuid4())
+    now_iso = datetime.now(UTC).isoformat()
     with get_db() as conn:
         try:
             conn.execute(
                 """
-                INSERT INTO meetings (id, source, source_url, language, slot_name, status)
-                VALUES (?, 'join', ?, ?, ?, 'pending')
+                INSERT INTO meetings (id, source, source_url, language, slot_name, status, created_at)
+                VALUES (?, 'join', ?, ?, ?, 'pending', ?)
                 """,
-                (meeting_id, meeting_url, language, slot_name),
+                (meeting_id, meeting_url, language, slot_name, now_iso),
             )
+            row = conn.execute("SELECT id, status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    return {"meetingId": meeting_id, "status": "scheduled"}
+    return map_join_upload_response(dict(row))
 
 def upload_meeting(file: UploadFile, language: str, slot_name: str) -> dict:
     if not _allowed_extension(file.filename):
@@ -103,15 +113,17 @@ def upload_meeting(file: UploadFile, language: str, slot_name: str) -> dict:
 
     # Derive a title from the uploaded filename (without extension)
     title = Path(file.filename).stem
+    now_iso = datetime.now(UTC).isoformat()
     with get_db() as conn:
         try:
             conn.execute(
                 """
-                INSERT INTO meetings (id, source, media_path, media_type, language, slot_name, title, status)
-                VALUES (?, 'upload', ?, ?, ?, ?, ?, 'pending')
+                INSERT INTO meetings (id, source, media_path, media_type, language, slot_name, title, status, created_at)
+                VALUES (?, 'upload', ?, ?, ?, ?, ?, 'pending', ?)
                 """,
-                (meeting_id, str(saved_path), media_type, language, slot_name, title),
+                (meeting_id, str(saved_path), media_type, language, slot_name, title, now_iso),
             )
+            row = conn.execute("SELECT id, status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
         except Exception as e:
             # Rollback file creation
             if saved_path.exists():
@@ -120,7 +132,7 @@ def upload_meeting(file: UploadFile, language: str, slot_name: str) -> dict:
             if meeting_dir.exists():
                 meeting_dir.rmdir()
             raise HTTPException(status_code=500, detail=str(e))
-    return {"meetingId": meeting_id, "status": "scheduled"}
+    return map_join_upload_response(dict(row))
 
 def list_meetings(limit: int = 50, offset: int = 0, q: Optional[str] = None) -> List[dict]:
     """Return a paginated list of meetings.
@@ -128,24 +140,19 @@ def list_meetings(limit: int = 50, offset: int = 0, q: Optional[str] = None) -> 
     ``meetingId``, ``title``, ``overview``, ``createdAt``, ``status``.
     """
     with get_db() as conn:
-        # Select columns with names that match the Pydantic schema keys.
-        base_sql = (
-            "SELECT id AS meetingId, title, overview, created_at AS createdAt, status "
-            "FROM meetings"
-        )
+        base_sql = "SELECT id, title, overview, created_at, status FROM meetings"
         params: List = []
         if q:
-            # Simple text search on title/overview. Using LIKE avoids complex FTS joins.
-            # The query is case‑insensitive by default in SQLite.
-            base_sql += " WHERE title LIKE ? OR overview LIKE ?"
+            base_sql += (
+                " WHERE title LIKE ? OR overview LIKE ? "
+                "OR id IN (SELECT meeting_id FROM transcript_segments WHERE text LIKE ?)"
+            )
             like_pattern = f"%{q}%"
-            params.extend([like_pattern, like_pattern])
-        # Apply ordering and pagination.
-        base_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            params.extend([like_pattern, like_pattern, like_pattern])
+        base_sql += " ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(base_sql, params).fetchall()
-        # ``sqlite3.Row`` behaves like a dict; convert each row to a plain dict.
-        return [dict(row) for row in rows]
+        return [map_meeting_list_item(dict(row)) for row in rows]
 
 def get_meeting_detail(meeting_id: str) -> dict:
     """Fetch detailed meeting information.
@@ -153,77 +160,79 @@ def get_meeting_detail(meeting_id: str) -> dict:
     Returns empty collections when optional data is absent.
     """
     with get_db() as conn:
-        # Core meeting record – primary key column is ``id``
         meeting_row = conn.execute(
             "SELECT * FROM meetings WHERE id = ?",
             (meeting_id,)
         ).fetchone()
         if not meeting_row:
             raise HTTPException(status_code=404, detail="Meeting not found")
-        # Convert sqlite row to dict for easy .get() access
-        meeting = dict(meeting_row)
 
-        # Summary fields are stored directly in the meetings table.
-        summary_fields = ["overview", "project_progress", "challenges", "next_steps"]
-        summary = {field: meeting.get(field) for field in summary_fields if meeting.get(field) is not None}
-        summary = summary or None
-
-        # Transcript segments (ordered by start_time)
         transcript_rows = conn.execute(
             "SELECT * FROM transcript_segments WHERE meeting_id = ? ORDER BY start_time",
             (meeting_id,)
         ).fetchall()
-        transcript = [dict(r) for r in transcript_rows] if transcript_rows else []
 
-        # Speakers
         speaker_rows = conn.execute(
             "SELECT * FROM speakers WHERE meeting_id = ?",
             (meeting_id,)
         ).fetchall()
-        speakers = [dict(r) for r in speaker_rows] if speaker_rows else []
 
-        # Topics – optional table; return empty list if missing.
         try:
             topic_rows = conn.execute(
                 "SELECT * FROM topics WHERE meeting_id = ?",
                 (meeting_id,)
             ).fetchall()
-            topics = [dict(r) for r in topic_rows] if topic_rows else []
         except Exception:
-            topics = []
+            topic_rows = []
 
-        # Action items
         action_rows = conn.execute(
             "SELECT * FROM action_items WHERE meeting_id = ?",
             (meeting_id,)
         ).fetchall()
-        action_items = [dict(r) for r in action_rows] if action_rows else []
 
-        # Analytics – optional table.
         try:
             analytics_row = conn.execute(
                 "SELECT * FROM analytics WHERE meeting_id = ?",
                 (meeting_id,)
             ).fetchone()
-            analytics = dict(analytics_row) if analytics_row else None
         except Exception:
-            analytics = None
+            analytics_row = None
 
-        response = {
-            "meetingId": meeting["id"],
-            "title": meeting.get("title"),
-            "status": meeting.get("status"),
-            "summary": summary,
-            "transcript": transcript,
-            "speakers": speakers,
-            "topics": topics,
-            "actionItems": action_items,
-            "analytics": analytics,
-            "mediaUrl": None,
-        }
-        if meeting.get("media_path"):
-            response["mediaUrl"] = f"/api/v1/media/{meeting_id}"
-        return response
+        media_url = f"/api/v1/meetings/{meeting_id}/media" if meeting_row["media_path"] else None
+
+        return map_meeting_detail(
+            meeting=dict(meeting_row),
+            transcript=[dict(r) for r in transcript_rows],
+            speakers=[dict(r) for r in speaker_rows],
+            topics=[dict(r) for r in topic_rows],
+            action_items=[dict(r) for r in action_rows],
+            analytics=dict(analytics_row) if analytics_row else None,
+            media_url=media_url,
+        )
+
+def update_action_item(meeting_id: str, item_id: str, done: bool) -> dict:
+    with get_db() as conn:
+        meeting = conn.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        item = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
+        if not item:
+            raise HTTPException(status_code=404, detail="Action item not found")
+        if item["meeting_id"] != meeting_id:
+            raise HTTPException(status_code=404, detail="Action item belongs to a different meeting")
+
+        done_int = 1 if done else 0
+        conn.execute(
+            "UPDATE action_items SET done = ? WHERE id = ? AND meeting_id = ?",
+            (done_int, item_id, meeting_id),
+        )
+        updated = conn.execute(
+            "SELECT * FROM action_items WHERE id = ? AND meeting_id = ?",
+            (item_id, meeting_id),
+        ).fetchone()
+
+        return map_action_item_response(dict(updated))
 
 def get_media_path(meeting_id: str) -> Path:
     with get_db() as conn:

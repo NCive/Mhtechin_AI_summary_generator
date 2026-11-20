@@ -5,8 +5,6 @@ export const MEETING_TABS = {
 
 export const SIDE_TABS = {
   SPEAKERS: 'speakers',
-  TOPICS: 'topics',
-  ANALYTICS: 'analytics',
 } as const;
 
 export const MEETING_STATUS_STYLES = {

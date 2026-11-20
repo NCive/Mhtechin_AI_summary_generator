@@ -25,9 +25,9 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({ meeting, onBack })
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const title = meeting?.title || 'Meeting Details';
-  const folder = meeting?.folder || 'General';
-  const date = meeting?.date || 'Today';
-  const timeRange = meeting?.timeRange || (meeting?.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} mins` : '45 mins');
+  const folder = meeting?.folder;
+  const date = meeting?.date;
+  const timeRange = meeting?.timeRange || (meeting?.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} mins` : undefined);
 
   const handleShare = async () => {
     const success = await share({
@@ -64,21 +64,27 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({ meeting, onBack })
             <h1 className="text-xl font-bold text-[#141522] tracking-tight">
               {title}
             </h1>
-            <span className="inline-flex items-center gap-1.5 bg-[#f0edff] text-[#5932ea] text-xs font-medium px-2.5 py-0.5 rounded-md">
-              <Folder className="w-3 h-3 fill-current text-[#5932ea]" />
-              <span>{folder}</span>
-            </span>
+            {folder && (
+              <span className="inline-flex items-center gap-1.5 bg-[#f0edff] text-[#5932ea] text-xs font-medium px-2.5 py-0.5 rounded-md">
+                <Folder className="w-3 h-3 fill-current text-[#5932ea]" />
+                <span>{folder}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 mt-1">
-            <div className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-gray-400" />
-              <span>{date}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-gray-400" />
-              <span>{timeRange}</span>
-            </div>
+            {date && (
+              <div className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                <span>{date}</span>
+              </div>
+            )}
+            {timeRange && (
+              <div className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                <span>{timeRange}</span>
+              </div>
+            )}
             <Users className="w-3.5 h-3.5 text-purple-600 font-bold" />
           </div>
         </div>

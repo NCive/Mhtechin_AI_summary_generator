@@ -9,7 +9,6 @@ import {
   Check,
 } from 'lucide-react';
 import { MeetingSummary, ProgressItem, ChallengeItem, ActionItem } from '../../types/meeting';
-import { Badge } from '../common/Badge';
 import { Toast } from '../common/Toast';
 import { formatSimpleDate } from '../../utils/formatters';
 import { updateActionItem } from '../../services/meetingService';
@@ -35,32 +34,6 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
       </div>
     );
   }
-
-  const getProgressBadge = (status?: string) => {
-    switch (status) {
-      case 'completed':
-        return <Badge variant="success" size="sm">Done</Badge>;
-      case 'in_progress':
-        return <Badge variant="info" size="sm">In Progress</Badge>;
-      case 'blocked':
-        return <Badge variant="danger" size="sm">Blocked</Badge>;
-      default:
-        return <Badge variant="default" size="sm">{status || 'Status'}</Badge>;
-    }
-  };
-
-  const getSeverityBadge = (severity?: string) => {
-    switch (severity) {
-      case 'high':
-        return <Badge variant="danger" size="sm">High Severity</Badge>;
-      case 'medium':
-        return <Badge variant="warning" size="sm">Medium Severity</Badge>;
-      case 'low':
-        return <Badge variant="info" size="sm">Low Severity</Badge>;
-      default:
-        return <Badge variant="default" size="sm">{severity || 'Moderate'}</Badge>;
-    }
-  };
 
   const rawProgress = summary.projectProgress || summary.project_progress || summary.key_points?.project_progress || [];
   const rawChallenges = summary.challengesFaced || summary.challenges_faced || summary.challenge_faced || summary.key_points?.challenges_faced || [];
@@ -147,7 +120,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
             {progressList.map((item) => (
               <div
                 key={item.id || item.title}
-                className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-200/70 gap-2"
+                className="p-3 rounded-lg bg-slate-50 border border-slate-200/70"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -155,7 +128,6 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                   </div>
                   {item.notes && <p className="text-xs text-slate-600">{item.notes}</p>}
                 </div>
-                <div className="shrink-0">{getProgressBadge(item.status)}</div>
               </div>
             ))}
           </div>
@@ -181,7 +153,6 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
               >
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <h4 className="text-sm font-semibold text-amber-950">{item.title}</h4>
-                  {getSeverityBadge(item.severity)}
                 </div>
                 {item.description && (
                   <p className="text-xs text-slate-700 leading-relaxed">{item.description}</p>
@@ -256,19 +227,6 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({
                       <span className="flex items-center gap-1 text-slate-500">
                         <Calendar className="w-3 h-3" />
                         Due: {formatSimpleDate(item.dueDate)}
-                      </span>
-                    )}
-                    {item.priority && (
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                          item.priority === 'high'
-                            ? 'bg-rose-100 text-rose-700'
-                            : item.priority === 'medium'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {item.priority}
                       </span>
                     )}
                   </div>

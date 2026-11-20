@@ -9,13 +9,16 @@ export function useMeetingDetail(meetingId: string | undefined) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('error');
 
-  const fetchMeeting = useCallback(async () => {
+  const fetchMeeting = useCallback(async (isInitial: boolean = false) => {
     if (!meetingId) {
-      setError('Meeting ID is missing.');
+      setError(null);
+      setMeeting(null);
       setIsLoading(false);
       return;
     }
-    setIsLoading(true);
+    if (isInitial) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       const data = await getMeetingById(meetingId);
@@ -24,13 +27,35 @@ export function useMeetingDetail(meetingId: string | undefined) {
       const msg = (err as Error)?.message || 'Failed to load meeting details.';
       setError(msg);
     } finally {
-      setIsLoading(false);
+      if (isInitial) {
+        setIsLoading(false);
+      }
     }
   }, [meetingId]);
 
   useEffect(() => {
-    fetchMeeting();
+    fetchMeeting(true);
   }, [fetchMeeting]);
+
+  // While status is 'scheduled' or 'processing', refresh meeting data every 5 seconds
+  // Stop when it becomes 'completed' or 'failed' (and when leaving the page)
+  useEffect(() => {
+    if (!meetingId) return;
+    if (meeting?.status !== 'scheduled' && meeting?.status !== 'processing') {
+      return;
+    }
+
+    const intervalId = setInterval(async () => {
+      try {
+        const data = await getMeetingById(meetingId);
+        setMeeting(data);
+      } catch {
+        // Silently catch polling errors to avoid transient error flashes
+      }
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [meetingId, meeting?.status]);
 
   const toggleActionItem = useCallback(async (itemId: string) => {
     if (!meetingId) return;
@@ -129,7 +154,7 @@ export function useMeetingDetail(meetingId: string | undefined) {
     meeting,
     isLoading,
     error,
-    refetch: fetchMeeting,
+    refetch: () => fetchMeeting(true),
     toggleActionItem,
     toastMessage,
     toastType,

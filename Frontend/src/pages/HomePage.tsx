@@ -21,7 +21,7 @@ export const HomePage: React.FC = () => {
     isSubmitting,
   } = useMeetings();
 
-  const [selectedMeetingId, setSelectedMeetingId] = useState<string>('meet-weekly-sync');
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
 
@@ -40,15 +40,15 @@ export const HomePage: React.FC = () => {
   // Sync default selected meeting
   useEffect(() => {
     if (meetings.length > 0) {
-      const exists = meetings.some((m) => m.id === selectedMeetingId);
-      if (!exists && !selectedMeetingId) {
-        setSelectedMeetingId(meetings[0].id);
+      const exists = meetings.some((m) => (m.id || (m as any).meetingId) === selectedMeetingId);
+      if (!exists) {
+        setSelectedMeetingId(meetings[0].id || (meetings[0] as any).meetingId);
       }
     }
   }, [meetings, selectedMeetingId]);
 
   const handleSelectMeeting = (meeting: Meeting) => {
-    setSelectedMeetingId(meeting.id);
+    setSelectedMeetingId(meeting.id || (meeting as any).meetingId);
   };
 
   const handleJoinMeeting = async (payload: JoinMeetingPayload) => {
@@ -56,11 +56,12 @@ export const HomePage: React.FC = () => {
       const res = await joinMeetingAction(payload);
       setToastType('success');
       setToastMessage('Meeting joined successfully!');
-      const newId = (res as { id?: string; meeting_id?: string }).id ||
-        (res as { meeting_id?: string }).meeting_id;
+      const resData = res as { id?: string; meeting_id?: string; meetingId?: string } | undefined;
+      const newId = resData?.id || resData?.meetingId || resData?.meeting_id;
       if (newId) {
         setSelectedMeetingId(newId);
       }
+      setSearchQuery('');
     } catch (err: unknown) {
       setToastType('error');
       setToastMessage((err as Error)?.message || 'Failed to join meeting.');
@@ -72,11 +73,12 @@ export const HomePage: React.FC = () => {
       const res = await uploadMeetingAction(payload);
       setToastType('success');
       setToastMessage('Meeting recording uploaded successfully!');
-      const newId = (res as { id?: string; meeting_id?: string }).id ||
-        (res as { meeting_id?: string }).meeting_id;
+      const resData = res as { id?: string; meeting_id?: string; meetingId?: string } | undefined;
+      const newId = resData?.id || resData?.meetingId || resData?.meeting_id;
       if (newId) {
         setSelectedMeetingId(newId);
       }
+      setSearchQuery('');
     } catch (err: unknown) {
       setToastType('error');
       setToastMessage((err as Error)?.message || 'Failed to upload meeting.');

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Gauge, Smile } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { Speaker } from '../../types/meeting';
 import { formatSecondsToTime } from '../../utils/formatters';
 
@@ -47,21 +47,14 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers }) => {
           </div>
 
           {/* Metrics */}
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
             <div className="flex items-center gap-1">
               <MessageSquare className="w-3 h-3 text-slate-400" />
               <span>{formatSecondsToTime(spk.talkDurationSeconds || 0)}</span>
             </div>
-            {spk.wordsPerMinute && (
+            {spk.listenPercentage != null && (
               <div className="flex items-center gap-1">
-                <Gauge className="w-3 h-3 text-slate-400" />
-                <span>{spk.wordsPerMinute} wpm</span>
-              </div>
-            )}
-            {spk.sentiment && (
-              <div className="flex items-center gap-1 capitalize">
-                <Smile className="w-3 h-3 text-slate-400" />
-                <span>{spk.sentiment}</span>
+                <span>Listen: {spk.listenPercentage}%</span>
               </div>
             )}
           </div>

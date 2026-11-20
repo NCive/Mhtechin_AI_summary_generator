@@ -103,8 +103,8 @@ export const NewMeetingSection: React.FC<NewMeetingSectionProps> = ({
 
         {/* Input & Action Button row */}
         {activeTab === 'online' ? (
-          <form onSubmit={handleJoin} className="flex items-center gap-3">
-            <div className="flex-1 flex items-center justify-between border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus-within:border-[#5932ea] transition-colors">
+          <form onSubmit={handleJoin} className="flex items-center gap-3 min-w-0">
+            <div className="flex-1 min-w-0 flex items-center justify-between border border-gray-200 rounded-xl px-4 py-2.5 bg-white focus-within:border-[#5932ea] transition-colors">
               <input
                 type="text"
                 value={meetingUrl}
@@ -136,13 +136,13 @@ export const NewMeetingSection: React.FC<NewMeetingSectionProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-[#5932ea] hover:bg-[#4b27d6] text-white text-sm font-semibold px-6 sm:px-7 py-3 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer disabled:opacity-60"
+              className="bg-[#5932ea] hover:bg-[#4b27d6] text-white text-sm font-semibold px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer disabled:opacity-60"
             >
               {isSubmitting ? 'Joining...' : 'Join Now'}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleUpload} className="flex items-center gap-3">
+          <form onSubmit={handleUpload} className="flex items-center gap-3 min-w-0">
             <input
               type="file"
               ref={fileInputRef}
@@ -157,7 +157,7 @@ export const NewMeetingSection: React.FC<NewMeetingSectionProps> = ({
             />
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 flex items-center justify-between border border-dashed border-gray-300 hover:border-[#5932ea] rounded-xl px-4 py-2.5 bg-gray-50/50 cursor-pointer transition-colors"
+              className="flex-1 min-w-0 flex items-center justify-between border border-dashed border-gray-300 hover:border-[#5932ea] rounded-xl px-4 py-2.5 bg-gray-50/50 cursor-pointer transition-colors"
             >
               <span className="text-sm text-gray-500 truncate">
                 {selectedFile ? selectedFile.name : 'Select or drop recorded meeting file (MP4, MP3, WAV)...'}
@@ -168,7 +168,7 @@ export const NewMeetingSection: React.FC<NewMeetingSectionProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-[#5932ea] hover:bg-[#4b27d6] text-white text-sm font-semibold px-6 sm:px-7 py-3 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer disabled:opacity-60"
+              className="bg-[#5932ea] hover:bg-[#4b27d6] text-white text-sm font-semibold px-5 sm:px-6 py-2.5 sm:py-3 rounded-xl transition-colors shrink-0 shadow-xs cursor-pointer disabled:opacity-60"
             >
               {isSubmitting ? 'Uploading...' : 'Upload Now'}
             </button>

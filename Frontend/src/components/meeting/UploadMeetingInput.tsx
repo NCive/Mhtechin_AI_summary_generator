@@ -61,7 +61,7 @@ export const UploadMeetingInput: React.FC<UploadMeetingInputProps> = ({
       />
 
       {selectedFile ? (
-        <div className="flex items-center justify-between p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-lg">
+        <div className="flex items-center justify-between p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-lg min-w-0">
           <div className="flex items-center gap-2.5 min-w-0 pr-2">
             <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
               <FileAudio className="w-4 h-4" />
@@ -86,6 +86,7 @@ export const UploadMeetingInput: React.FC<UploadMeetingInputProps> = ({
               size="sm"
               isLoading={isLoading}
               onClick={handleUploadSubmit}
+              className="shrink-0"
             >
               Upload
             </Button>

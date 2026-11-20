@@ -57,14 +57,17 @@ export const RecentMeetingsList: React.FC<RecentMeetingsListProps> = ({
         <div className="py-8 text-center text-xs text-gray-400">No meetings available.</div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-          {meetings.slice(0, 2).map((meeting) => (
-            <MeetingCard
-              key={meeting.id}
-              meeting={meeting}
-              isSelected={selectedMeetingId === meeting.id}
-              onSelect={onSelectMeeting}
-            />
-          ))}
+          {meetings.slice(0, 2).map((meeting) => {
+            const meetingId = meeting.id || (meeting as any).meetingId;
+            return (
+              <MeetingCard
+                key={meetingId}
+                meeting={meeting}
+                isSelected={selectedMeetingId === meetingId}
+                onSelect={onSelectMeeting}
+              />
+            );
+          })}
         </div>
       )}
     </div>

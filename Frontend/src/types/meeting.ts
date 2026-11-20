@@ -9,7 +9,6 @@ export interface ActionItem {
   dueDate?: string;
   due_date?: string;
   completed?: boolean;
-  priority?: 'high' | 'medium' | 'low';
 }
 
 export interface ChallengeItem {
@@ -67,40 +66,8 @@ export interface Speaker {
   color: string;
   talkDurationSeconds?: number;
   talkDurationLabel?: string; // e.g. "1h"
-  taskTimeLabel?: string; // e.g. "25m"
   talkPercentage: number; // e.g. 42
   listenPercentage?: number; // e.g. 70
-  wordsPerMinute?: number;
-  sentiment?: 'positive' | 'neutral' | 'critical';
-}
-
-export interface Topic {
-  id: string;
-  name: string;
-  timestampStart: number;
-  timestampEnd: number;
-  durationSeconds: number;
-  keyPoints: string[];
-  relevanceScore?: number;
-}
-
-export interface ParticipantAnalytics {
-  totalDurationSeconds: number;
-  overallSentiment: {
-    positive: number;
-    neutral: number;
-    negative: number;
-  };
-  totalSpeakers: number;
-  questionsAskedCount: number;
-  averagePaceWpm: number;
-  engagementScore: number;
-  speakerTalkTimeDistribution: {
-    speakerName: string;
-    percentage: number;
-    durationSeconds: number;
-    color: string;
-  }[];
 }
 
 export interface Meeting {
@@ -110,7 +77,7 @@ export interface Meeting {
   slotName: string;
   date: string;
   timeRange?: string;
-  durationSeconds: number;
+  durationSeconds?: number | null;
   durationLabel?: string;
   status: MeetingStatus;
   language: string;
@@ -127,8 +94,10 @@ export interface MeetingDetail extends Meeting {
   summary?: MeetingSummary;
   transcript?: TranscriptUtterance[];
   speakers?: Speaker[];
-  topics?: Topic[];
-  analytics?: ParticipantAnalytics;
+  mediaType?: 'audio' | 'video' | null;
+  processedSeconds?: number | null;
+  durationSeconds?: number | null;
+  error?: string | null;
 }
 
 export interface JoinMeetingPayload {

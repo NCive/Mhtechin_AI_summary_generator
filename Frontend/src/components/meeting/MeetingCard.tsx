@@ -40,13 +40,15 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
 
         {/* Date, duration, users */}
         <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-2.5">
-          <div className="flex items-center gap-1">
-            <Calendar className="w-3 h-3 text-gray-400" />
-            <span>{meeting.date}</span>
-          </div>
+          {meeting.date ? (
+            <div className="flex items-center gap-1">
+              <Calendar className="w-3 h-3 text-gray-400" />
+              <span>{meeting.date}</span>
+            </div>
+          ) : null}
           <div className="flex items-center gap-1">
             <Clock className="w-3 h-3 text-gray-400" />
-            <span>{meeting.durationLabel || `${Math.round(meeting.durationSeconds / 60)}m`}</span>
+            <span>{meeting.durationLabel || (meeting.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)}m` : '—')}</span>
           </div>
           <Users className="w-3 h-3 text-gray-400" />
         </div>
@@ -59,30 +61,38 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({
 
       {/* Bottom: Folder badge & avatars */}
       <div className="flex items-center justify-between pt-2">
-        <span className="inline-flex items-center gap-1.5 bg-[#f0edff] text-[#5932ea] text-[11px] font-medium px-2.5 py-1 rounded-md">
-          <Folder className="w-3 h-3 fill-current text-[#5932ea]" />
-          <span>{meeting.folder || 'Development'}</span>
-        </span>
+        {meeting.folder ? (
+          <span className="inline-flex items-center gap-1.5 bg-[#f0edff] text-[#5932ea] text-[11px] font-medium px-2.5 py-1 rounded-md">
+            <Folder className="w-3 h-3 fill-current text-[#5932ea]" />
+            <span>{meeting.folder}</span>
+          </span>
+        ) : (
+          <div />
+        )}
 
         {/* Avatars */}
         <div className="flex items-center -space-x-1.5">
           {meeting.participantAvatars && meeting.participantAvatars.length > 0 ? (
-            meeting.participantAvatars.slice(0, 2).map((avatar, idx) => (
-              <img
-                key={idx}
-                src={avatar}
-                alt="Participant"
-                className="w-5 h-5 rounded-full object-cover ring-1.5 ring-white"
-              />
-            ))
-          ) : (
-            <div className="w-5 h-5 rounded-full bg-indigo-100 flex items-center justify-center text-[9px] font-bold text-[#5932ea]">
-              U
-            </div>
-          )}
-          <span className="text-[11px] font-semibold text-[#5932ea] pl-2">
-            +{meeting.participantsCount > 2 ? meeting.participantsCount - 2 : 2}
-          </span>
+            <>
+              {meeting.participantAvatars.slice(0, 2).map((avatar, idx) => (
+                <img
+                  key={idx}
+                  src={avatar}
+                  alt="Participant"
+                  className="w-5 h-5 rounded-full object-cover ring-1.5 ring-white"
+                />
+              ))}
+              {meeting.participantsCount > 2 && (
+                <span className="text-[11px] font-semibold text-[#5932ea] pl-2">
+                  +{meeting.participantsCount - 2}
+                </span>
+              )}
+            </>
+          ) : meeting.participantsCount != null && meeting.participantsCount > 0 ? (
+            <span className="text-[11px] font-medium text-gray-500">
+              {meeting.participantsCount} participants
+            </span>
+          ) : null}
         </div>
       </div>
     </div>
