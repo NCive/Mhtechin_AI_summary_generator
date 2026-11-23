@@ -4,9 +4,9 @@ from __future__ import annotations
 import logging
 import subprocess
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 from app.core.config import settings
 
@@ -33,8 +33,7 @@ def get_media_duration(file_path: Path) -> float:
     try:
         proc = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=30,
             check=False,
@@ -73,16 +72,15 @@ def extract_audio_to_wav(
     media_root = Path(settings.MEDIA_DIR).resolve()
     resolved_input = media_path.resolve()
 
-    if not resolved_input.is_relative_to(media_root) and not resolved_input.exists():
-        raise ValueError(f"Media file '{media_path}' is outside MEDIA_DIR or does not exist.")
+    if not resolved_input.is_relative_to(media_root):
+        raise ValueError(f"Media file '{media_path}' is outside MEDIA_DIR.")
 
     if not resolved_input.is_file():
         raise ValueError(f"Media path '{media_path}' is not a valid file.")
 
     if output_wav_path is None:
-        temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        output_wav_path = Path(temp_file.name)
-        temp_file.close()
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+            output_wav_path = Path(temp_file.name)
 
     cmd = [
         settings.FFMPEG_PATH,
@@ -102,8 +100,7 @@ def extract_audio_to_wav(
     try:
         proc = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             timeout=300,
             check=False,

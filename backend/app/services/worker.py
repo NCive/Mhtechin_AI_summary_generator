@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.db.database import get_db
+from app.services.llm import LLMUnavailable, is_server_ready
 from app.services.pipeline import process_meeting_pipeline
 
 logger = logging.getLogger(__name__)
@@ -60,19 +61,44 @@ async def worker_loop() -> None:
     # 1. Recover any interrupted jobs from previous runs
     try:
         recover_interrupted_meetings()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error("Failed to recover interrupted meetings on worker startup: %s", exc)
 
+    server_was_down = False
     while True:
         try:
+            if not is_server_ready():
+                if not server_was_down:
+                    logger.warning(
+                        "LLM server is not ready; worker is waiting before claiming meetings."
+                    )
+                    server_was_down = True
+                await asyncio.sleep(settings.WORKER_POLL_INTERVAL)
+                continue
+            elif server_was_down:
+                logger.info("LLM server is now ready; worker resuming meeting claims.")
+                server_was_down = False
+
             meeting_id = claim_pending_meeting()
             if meeting_id:
                 logger.info("Processing meeting %s in threadpool...", meeting_id)
                 try:
                     # Offload CPU/IO intensive operations outside the API event loop
                     await asyncio.to_thread(process_meeting_pipeline, meeting_id)
+                except LLMUnavailable as exc:
+                    logger.warning(
+                        "Meeting %s deferred back to pending (LLM unavailable: %s)",
+                        meeting_id,
+                        exc,
+                    )
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE meetings SET status = 'pending', error = ? WHERE id = ?",
+                            (f"Deferred: {exc}", meeting_id),
+                        )
+                    await asyncio.sleep(settings.WORKER_POLL_INTERVAL)
                 except Exception as exc:
-                    logger.exception("Failed to process meeting %s: %s", meeting_id, exc)
+                    logger.exception("Failed to process meeting %s", meeting_id)
                     # Persist actionable error in DB
                     with get_db() as conn:
                         conn.execute(
@@ -87,7 +113,7 @@ async def worker_loop() -> None:
         except asyncio.CancelledError:
             logger.info("Background worker loop received shutdown signal. Exiting.")
             break
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("Unexpected error in worker loop: %s", exc)
             await asyncio.sleep(settings.WORKER_POLL_INTERVAL)
 

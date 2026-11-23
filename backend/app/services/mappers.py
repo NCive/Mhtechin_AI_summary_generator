@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 def _derive_date(created_at: str | None) -> str | None:
@@ -57,17 +57,30 @@ def map_meeting_list_item(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def map_transcript_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
+def map_transcript_rows(
+    rows: list[dict[str, Any]],
+    speaker_colors: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    colors = speaker_colors or {}
+    result = []
+    for r in rows:
+        stored_speaker = r.get("speaker")
+        if stored_speaker and str(stored_speaker).strip():
+            name = str(stored_speaker).strip()
+            color = colors.get(name.lower())
+        else:
+            name = "Unknown speaker"
+            color = None
+
+        result.append({
             "id": str(r.get("id")),
-            "startTime": r.get("start_time"),
-            "endTime": r.get("end_time"),
-            "speaker": r.get("speaker"),
-            "text": r.get("text"),
-        }
-        for r in rows
-    ]
+            "timestampStart": float(r.get("start_time", 0.0)) if r.get("start_time") is not None else None,
+            "timestampEnd": float(r.get("end_time", 0.0)) if r.get("end_time") is not None else None,
+            "speakerName": name,
+            "speakerColor": color,
+            "text": str(r.get("text", "")),
+        })
+    return result
 
 
 def map_speaker_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -76,6 +89,11 @@ def map_speaker_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "id": str(r.get("id")),
             "name": r.get("name"),
             "color": r.get("color"),
+            "role": r.get("role") or "",
+            "avatar": r.get("avatar"),
+            "talkDurationSeconds": r.get("talk_seconds"),
+            "talkPercentage": r.get("talk_percent"),
+            "listenPercentage": r.get("listen_percent"),
             "talkSeconds": r.get("talk_seconds"),
             "talkPercent": r.get("talk_percent"),
             "listenPercent": r.get("listen_percent"),
@@ -104,6 +122,7 @@ def map_action_item_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "assignee": r.get("owner") or r.get("assignee"),
             "dueDate": r.get("deadline") or r.get("dueDate"),
             "done": bool(r.get("done")),
+            "completed": bool(r.get("done")),
         }
         for r in rows
     ]
@@ -124,13 +143,23 @@ def map_meeting_detail(
                 return val
         return val
 
+    # Build speaker color dictionary (case-insensitive name -> color)
+    speaker_colors: dict[str, str] = {}
+    for spk in speakers:
+        spk_name = spk.get("name")
+        spk_color = spk.get("color")
+        if spk_name and spk_color:
+            speaker_colors[str(spk_name).strip().lower()] = str(spk_color).strip()
+
     overview = meeting.get("overview")
     project_progress = _parse_json(meeting.get("project_progress"))
     challenges = _parse_json(meeting.get("challenges"))
     next_steps = _parse_json(meeting.get("next_steps"))
 
+    mapped_actions = map_action_item_rows(action_items)
+
     summary = None
-    if any(v is not None for v in (overview, project_progress, challenges, next_steps)):
+    if any(v is not None for v in (overview, project_progress, challenges, next_steps)) or mapped_actions:
         summary = {}
         if overview is not None:
             summary["overview"] = overview
@@ -141,6 +170,8 @@ def map_meeting_detail(
             summary["challengesFaced"] = challenges
         if next_steps is not None:
             summary["nextSteps"] = next_steps
+        if mapped_actions:
+            summary["actionItems"] = mapped_actions
 
     meeting_id = str(meeting.get("id") or meeting.get("meeting_id") or meeting.get("meetingId"))
     created_at = meeting.get("created_at") or meeting.get("createdAt")
@@ -148,16 +179,21 @@ def map_meeting_detail(
         "id": meeting_id,
         "meetingId": meeting_id,
         "title": meeting.get("title"),
+        "folder": meeting.get("folder") or "",
+        "slotName": meeting.get("slot_name") or "",
         "status": _map_status(meeting.get("status")),
+        "language": meeting.get("language") or "en",
+        "meetingUrl": meeting.get("source_url"),
         "createdAt": created_at,
         "date": _derive_date(created_at),
         "summary": summary,
-        "transcript": map_transcript_rows(transcript),
+        "transcript": map_transcript_rows(transcript, speaker_colors=speaker_colors),
         "speakers": map_speaker_rows(speakers),
-        "actionItems": map_action_item_rows(action_items),
+        "actionItems": mapped_actions,
         "mediaUrl": media_url,
         "mediaType": meeting.get("media_type") or meeting.get("mediaType"),
         "processedSeconds": meeting.get("processed_seconds") if meeting.get("processed_seconds") is not None else meeting.get("processedSeconds"),
         "durationSeconds": meeting.get("duration_seconds") if meeting.get("duration_seconds") is not None else meeting.get("durationSeconds"),
+        "participantsCount": len(speakers),
         "error": meeting.get("error"),
     }

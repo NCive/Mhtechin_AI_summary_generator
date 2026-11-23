@@ -257,3 +257,43 @@ def test_extract_chunk_notes_integration_fixture_2():
         assert required_key in notes
     assert isinstance(notes["summary"], str)
     assert isinstance(notes["action_items"], list)
+
+
+def test_verify_notes_unknown_speaker_commitment_gives_null():
+    chunk_text = (
+        "[00:10] Unknown Speaker: I will deploy the build tomorrow morning.\n"
+        "[00:20] Bob: I can take that bug fix on today.\n"
+    )
+    raw_notes = {
+        "summary": "Meeting notes",
+        "project_progress": [],
+        "challenges": [],
+        "action_items": [
+            {
+                "text": "Deploy build",
+                "owner": "Unknown Speaker",
+                "deadline": "tomorrow morning",
+                "source_time": "[00:10]",
+            },
+            {
+                "text": "Take bug fix",
+                "owner": "Bob",
+                "deadline": "today",
+                "source_time": "[00:20]",
+            },
+        ],
+        "next_steps": [],
+    }
+    verified = verify_notes(raw_notes, chunk_text, ["Unknown Speaker", "Bob"])
+    items = verified["action_items"]
+    assert len(items) == 2
+
+    # Commitment by Unknown Speaker gives null owner
+    assert items[0]["text"] == "Deploy build"
+    assert items[0]["owner"] is None
+    assert items[0]["deadline"] == "tomorrow morning"
+
+    # Commitment by Bob still gives Bob
+    assert items[1]["text"] == "Take bug fix"
+    assert items[1]["owner"] == "Bob"
+    assert items[1]["deadline"] == "today"

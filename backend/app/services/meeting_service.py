@@ -2,12 +2,12 @@ from datetime import UTC, datetime
 import mimetypes
 import os
 from pathlib import Path
+import re
 from typing import List, Optional
 from urllib.parse import urlparse
 import uuid
 
 from fastapi import HTTPException, UploadFile, status
-from pydantic import BaseModel
 
 from app.core.config import settings
 from app.db.database import get_db
@@ -142,13 +142,26 @@ def list_meetings(limit: int = 50, offset: int = 0, q: Optional[str] = None) -> 
     with get_db() as conn:
         base_sql = "SELECT id, title, overview, created_at, status FROM meetings"
         params: List = []
-        if q:
-            base_sql += (
-                " WHERE title LIKE ? OR overview LIKE ? "
-                "OR id IN (SELECT meeting_id FROM transcript_segments WHERE text LIKE ?)"
-            )
-            like_pattern = f"%{q}%"
-            params.extend([like_pattern, like_pattern, like_pattern])
+        if q and q.strip():
+            clean_terms = [re.sub(r"[^\w]", "", term) for term in q.split()]
+            clean_terms = [t for t in clean_terms if t]
+            like_pattern = f"%{q.strip()}%"
+
+            if clean_terms:
+                fts_query = " ".join(f'"{t}"*' for t in clean_terms)
+                base_sql += (
+                    " WHERE title LIKE ? OR overview LIKE ? "
+                    "OR id IN ("
+                    "  SELECT ts.meeting_id FROM transcript_segments ts "
+                    "  JOIN transcript_fts fts ON ts.id = fts.rowid "
+                    "  WHERE transcript_fts MATCH ?"
+                    ")"
+                )
+                params.extend([like_pattern, like_pattern, fts_query])
+            else:
+                base_sql += " WHERE title LIKE ? OR overview LIKE ?"
+                params.extend([like_pattern, like_pattern])
+
         base_sql += " ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(base_sql, params).fetchall()

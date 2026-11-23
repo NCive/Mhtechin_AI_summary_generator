@@ -48,7 +48,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Duration must use the media element's own duration (from loadedmetadata), not durationSeconds from the API
   const transcriptMax = safeTranscript.length > 0
-    ? Math.max(...safeTranscript.map((t) => t.timestampEnd))
+    ? Math.max(...safeTranscript.map((t) => t.timestampEnd ?? t.timestampStart ?? 0))
     : 0;
   const totalDuration = mediaDuration > 0 ? mediaDuration : transcriptMax;
 
@@ -68,16 +68,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Active utterance at current playback time
   const activeSegment = safeTranscript.find(
-    (seg) => currentTime >= seg.timestampStart && currentTime <= seg.timestampEnd
+    (seg) =>
+      currentTime >= (seg.timestampStart ?? 0) &&
+      currentTime <= (seg.timestampEnd ?? seg.timestampStart ?? 0)
   );
 
   const isSpeakerActive = (spk: Speaker): boolean => {
     if (!activeSegment) return false;
     if (activeSegment.speakerId && spk.id === activeSegment.speakerId) return true;
-    if (
-      activeSegment.speakerName &&
-      spk.name.trim().toLowerCase() === activeSegment.speakerName.trim().toLowerCase()
-    ) {
+    const segName = (activeSegment.speakerName ?? '').trim().toLowerCase();
+    const spkName = (spk.name ?? '').trim().toLowerCase();
+    if (segName && spkName && segName === spkName) {
       return true;
     }
     return false;
@@ -282,9 +283,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       className={`w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-xs transition-transform ${
                         isActive ? 'scale-105 ring-3 ring-[#5932ea]/30' : ''
                       }`}
-                      style={{ backgroundColor: spk.color || '#5932ea' }}
+                      style={{ backgroundColor: spk.color || '#94a3b8' }}
                     >
-                      {spk.name ? spk.name.charAt(0).toUpperCase() : '?'}
+                      {(spk.name ?? '').trim() ? (spk.name ?? '').trim().charAt(0).toUpperCase() : '?'}
                     </div>
 
                     {/* Speaker Name */}
@@ -293,7 +294,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         isActive ? 'text-[#5932ea]' : 'text-[#141522]'
                       }`}
                     >
-                      {spk.name}
+                      {spk.name || 'Unknown speaker'}
                     </span>
 
                     {/* Role if present */}
@@ -326,14 +327,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           title="Click to seek"
         >
           {safeTranscript.map((seg, idx) => {
-            const segDuration = Math.max(0, seg.timestampEnd - seg.timestampStart);
+            const start = seg.timestampStart ?? 0;
+            const end = seg.timestampEnd ?? start;
+            const segDuration = Math.max(0, end - start);
             const widthPercent = (segDuration / totalDuration) * 100;
+            const segSpeakerName = (seg.speakerName ?? '').trim().toLowerCase();
             const spk = safeSpeakers.find(
               (s) =>
-                s.id === seg.speakerId ||
-                s.name.trim().toLowerCase() === seg.speakerName.trim().toLowerCase()
+                (seg.speakerId && s.id === seg.speakerId) ||
+                (segSpeakerName && (s.name ?? '').trim().toLowerCase() === segSpeakerName)
             );
-            const color = spk?.color || seg.speakerColor || '#5932ea';
+            const color = spk?.color || seg.speakerColor || '#94a3b8';
 
             return (
               <div
@@ -343,7 +347,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   backgroundColor: color,
                 }}
                 className="h-full hover:opacity-80 transition-opacity"
-                title={`${seg.speakerName} (${formatSecondsToTime(seg.timestampStart)} - ${formatSecondsToTime(seg.timestampEnd)})`}
+                title={`${seg.speakerName || 'Unknown speaker'} (${formatSecondsToTime(start)} - ${formatSecondsToTime(end)})`}
               />
             );
           })}

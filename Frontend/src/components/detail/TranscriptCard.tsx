@@ -16,8 +16,8 @@ export const TranscriptCard: React.FC<TranscriptCardProps> = ({
 
   const filtered = transcript.filter(
     (t) =>
-      t.text.toLowerCase().includes(query.toLowerCase()) ||
-      t.speakerName.toLowerCase().includes(query.toLowerCase())
+      (t.text ?? '').toLowerCase().includes(query.toLowerCase()) ||
+      (t.speakerName ?? '').toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -48,17 +48,17 @@ export const TranscriptCard: React.FC<TranscriptCardProps> = ({
               <div className="flex items-center gap-2">
                 <span
                   className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: item.speakerColor }}
+                  style={{ backgroundColor: item.speakerColor || '#94a3b8' }}
                 />
-                <span className="text-xs font-bold text-[#141522]">{item.speakerName}</span>
+                <span className="text-xs font-bold text-[#141522]">{item.speakerName || 'Unknown speaker'}</span>
               </div>
               <button
                 type="button"
-                onClick={() => onSeek && onSeek(item.timestampStart)}
+                onClick={() => onSeek && onSeek(item.timestampStart ?? 0)}
                 className="flex items-center gap-1 text-[11px] font-mono text-[#5932ea] hover:underline cursor-pointer"
               >
                 <Play className="w-2.5 h-2.5 fill-current" />
-                <span>{formatSecondsToTime(item.timestampStart)}</span>
+                <span>{formatSecondsToTime(item.timestampStart ?? 0)}</span>
               </button>
             </div>
             <p className="text-xs text-gray-600 leading-relaxed pl-4 border-l-2 border-gray-200">

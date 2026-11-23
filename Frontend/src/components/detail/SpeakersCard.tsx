@@ -40,20 +40,20 @@ export const SpeakersCard: React.FC<SpeakersCardProps> = ({
                       {spk.avatar ? (
                         <img
                           src={spk.avatar}
-                          alt={spk.name}
+                          alt={spk.name || 'Unknown speaker'}
                           className="w-7 h-7 rounded-full object-cover shrink-0"
                         />
                       ) : (
                         <div
                           className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ backgroundColor: spk.color || '#5932ea' }}
+                          style={{ backgroundColor: spk.color || '#94a3b8' }}
                         >
-                          {spk.name?.charAt(0) || '?'}
+                          {(spk.name ?? '').trim() ? (spk.name ?? '').trim().charAt(0).toUpperCase() : '?'}
                         </div>
                       )}
                       <div className="min-w-0">
                         <p className="font-bold text-xs text-[#141522] truncate leading-tight">
-                          {spk.name}
+                          {spk.name || 'Unknown speaker'}
                         </p>
                         {spk.role && (
                           <p className="text-[10px] text-gray-400 truncate leading-tight">

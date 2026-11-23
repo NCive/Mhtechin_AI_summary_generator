@@ -5,4 +5,4 @@ pydantic
 pydantic-settings
 pytest
 httpx
-faster-whisper==1.2.1
+faster-whisper

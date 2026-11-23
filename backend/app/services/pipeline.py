@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
 from app.db.database import get_db
 from app.services.audio import extract_temporary_wav
-from app.services.llm import is_server_ready
+from app.services.llm import LLMUnavailable, is_server_ready
 from app.services.summarizer import merge_and_persist
 from app.services.transcription import persist_transcript_segments, transcribe_audio
 from app.services.windowing import process_transcript_windows
@@ -33,6 +32,10 @@ def process_meeting_pipeline(meeting_id: str) -> None:
     """
     logger.info("Starting processing pipeline for meeting %s", meeting_id)
 
+    # 0. Early check: LLM server readiness before CPU/IO heavy FFmpeg and Whisper
+    if not is_server_ready():
+        raise LLMUnavailable(f"LLM server is not ready before processing meeting {meeting_id}.")
+
     # 1. Fetch meeting info
     with get_db() as conn:
         row = conn.execute(
@@ -53,6 +56,9 @@ def process_meeting_pipeline(meeting_id: str) -> None:
 
         media_path = Path(meeting["media_path"])
         language = meeting.get("language")
+
+        # Delete any existing windows from a previous or interrupted run
+        conn.execute("DELETE FROM windows WHERE meeting_id = ?", (meeting_id,))
 
     # 2. Audio Extraction (Temporary 16kHz WAV + Duration)
     with extract_temporary_wav(media_path) as (wav_path, duration):

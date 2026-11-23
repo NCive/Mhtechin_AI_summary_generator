@@ -50,7 +50,7 @@ def _segments_to_text(segments: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for seg in segments:
         ts = _fmt_time(float(seg.get("start_time", 0)))
-        speaker = seg.get("speaker") or "Unknown"
+        speaker = seg.get("speaker") or "Unknown Speaker"
         text = str(seg.get("text", "")).strip()
         lines.append(f"{ts} {speaker}: {text}")
     return "\n".join(lines)
@@ -127,7 +127,7 @@ def split_transcript_windows(
         line = _segments_to_text([seg])
         try:
             line_tokens = count_tokens(line, client=client)
-        except (LLMUnavailable, Exception):
+        except (LLMUnavailable, Exception):  # noqa: BLE001
             # Fallback: estimate 1 token ≈ 4 chars
             line_tokens = max(1, math.ceil(len(line) / 4))
 
@@ -229,7 +229,7 @@ def process_transcript_windows(
             notes = extract_chunk_notes(win["text"], speaker_names, client=client)
         except LLMUnavailable:
             raise  # propagate so worker can mark meeting failed
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.error("Window %d extraction failed: %s", idx, exc)
             # Store a placeholder so the window row is recorded
             notes = {

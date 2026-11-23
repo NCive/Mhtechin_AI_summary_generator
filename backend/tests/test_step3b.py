@@ -221,10 +221,12 @@ class TestProcessTranscriptWindows:
         _, conn = _make_temp_db(tmp_path)
         _insert_meeting(conn, "mtg-004")
 
-        with patch("app.services.windowing.count_tokens", return_value=5), \
-             patch("app.services.windowing.extract_chunk_notes", side_effect=LLMUnavailable("offline")):
-            with pytest.raises(LLMUnavailable):
-                process_transcript_windows("mtg-004", SAMPLE_SEGMENTS, conn, token_budget=500)
+        with (
+            patch("app.services.windowing.count_tokens", return_value=5),
+            patch("app.services.windowing.extract_chunk_notes", side_effect=LLMUnavailable("offline")),
+            pytest.raises(LLMUnavailable),
+        ):
+            process_transcript_windows("mtg-004", SAMPLE_SEGMENTS, conn, token_budget=500)
         conn.close()
 
     def test_extraction_error_records_placeholder(self, tmp_path):
@@ -276,7 +278,7 @@ class TestMergeAndPersist:
         result = merge_and_persist("mtg-010", [], conn)
         assert result["summary"] is None
         # meetings.overview should remain NULL
-        row = conn.execute("SELECT overview FROM meetings WHERE id='mtg-010'").fetchone()
+        conn.execute("SELECT overview FROM meetings WHERE id='mtg-010'").fetchone()
         # overview may or may not be set to NULL; either is fine
         conn.close()
 
@@ -399,9 +401,11 @@ class TestMergeAndPersist:
         _, conn = _make_temp_db(tmp_path)
         _insert_meeting(conn, "mtg-016")
 
-        with patch("app.services.summarizer._persist_summary", side_effect=sqlite3.OperationalError("disk full")):
-            with pytest.raises(sqlite3.OperationalError):
-                merge_and_persist("mtg-016", [MOCK_NOTES], conn)
+        with (
+            patch("app.services.summarizer._persist_summary", side_effect=sqlite3.OperationalError("disk full")),
+            pytest.raises(sqlite3.OperationalError),
+        ):
+            merge_and_persist("mtg-016", [MOCK_NOTES], conn)
 
         # Action items should NOT have been written
         items = conn.execute(
@@ -427,6 +431,84 @@ class TestMergeAndPersist:
             result = merge_and_persist("mtg-017", [MOCK_NOTES, MOCK_NOTES], conn)
 
         assert result["summary"] == "LLM-merged summary."
+        conn.close()
+
+    def test_two_windows_merge_preserves_owners_and_deduplicates(self, tmp_path):
+        from app.services.summarizer import merge_and_persist
+        _, conn = _make_temp_db(tmp_path)
+        _insert_meeting(conn, "mtg-018")
+
+        win1 = {
+            "summary": "First section summary discussing backend auth.",
+            "project_progress": ["Completed auth module"],
+            "challenges": ["Database performance issue"],
+            "action_items": [
+                {
+                    "text": "Optimize database queries",
+                    "owner": "Carol",
+                    "deadline": "tomorrow",
+                    "source_time": "[00:15]",
+                }
+            ],
+            "next_steps": ["Deploy staging build"],
+        }
+        win2 = {
+            "summary": "Second section summary discussing deployment notes.",
+            "project_progress": ["completed auth module."],
+            "challenges": ["Database performance issue."],
+            "action_items": [
+                {
+                    "text": "Optimize database queries.",
+                    "owner": "SomeoneElse",
+                    "deadline": "next week",
+                    "source_time": "[00:30]",
+                },
+                {
+                    "text": "Prepare deployment documentation",
+                    "owner": "Dave",
+                    "deadline": "by Friday",
+                    "source_time": "[01:30]",
+                },
+            ],
+            "next_steps": ["Deploy staging build."],
+        }
+
+        mock_generate = MagicMock(return_value={"overview": "Unified meeting overview."})
+        with patch("app.services.summarizer.generate_json", mock_generate):
+            result = merge_and_persist("mtg-018", [win1, win2], conn)
+
+        assert mock_generate.call_count == 1
+        call_kwargs = mock_generate.call_args[1] if mock_generate.call_args[1] else {}
+        user_prompt = call_kwargs.get("user_prompt") or mock_generate.call_args[0][1]
+        schema = call_kwargs.get("schema") or mock_generate.call_args[0][2]
+
+        assert "First section summary" in user_prompt
+        assert "Second section summary" in user_prompt
+        assert "Optimize database queries" not in user_prompt
+        assert "Carol" not in user_prompt
+        assert schema.get("required") == ["overview"]
+
+        assert result["overview"] == "Unified meeting overview."
+        assert len(result["project_progress"]) == 1
+        assert result["project_progress"][0] == "Completed auth module"
+        assert len(result["challenges"]) == 1
+        assert result["challenges"][0] == "Database performance issue"
+        assert len(result["next_steps"]) == 1
+        assert result["next_steps"][0] == "Deploy staging build"
+
+        assert len(result["action_items"]) == 2
+        ai1 = result["action_items"][0]
+        assert ai1["text"] == "Optimize database queries"
+        assert ai1["owner"] == "Carol"
+        assert ai1["deadline"] == "tomorrow"
+        assert ai1["source_time"] == "[00:15]"
+
+        ai2 = result["action_items"][1]
+        assert ai2["text"] == "Prepare deployment documentation"
+        assert ai2["owner"] == "Dave"
+        assert ai2["deadline"] == "by Friday"
+        assert ai2["source_time"] == "[01:30]"
+
         conn.close()
 
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TranscriptUtterance, Speaker } from '../../types/meeting';
 import { formatSecondsToTime } from '../../utils/formatters';
 
@@ -20,11 +20,28 @@ export const SpeakerTimeline: React.FC<SpeakerTimelineProps> = ({
   const total = Math.max(durationSeconds, 1);
 
   // Map speaker colors
-  const speakerColorMap = speakers.reduce((acc, spk) => {
-    acc[spk.id] = spk.color;
-    acc[spk.name] = spk.color;
+  const speakerColorMap = (speakers || []).reduce((acc, spk) => {
+    const color = spk.color || '#94a3b8';
+    if (spk.id) acc[spk.id] = color;
+    if (spk.name) acc[spk.name] = color;
     return acc;
   }, {} as Record<string, string>);
+
+  // Deduplicate and filter out empty names for the speaker list
+  const validSpeakers = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Speaker[] = [];
+    for (const spk of (speakers || [])) {
+      const name = (spk.name ?? '').trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({ ...spk, name });
+      }
+    }
+    return list;
+  }, [speakers]);
 
   const handleBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -56,9 +73,15 @@ export const SpeakerTimeline: React.FC<SpeakerTimelineProps> = ({
         {/* Utterance segments */}
         {transcript && transcript.length > 0 ? (
           transcript.map((item) => {
-            const startPct = (item.timestampStart / total) * 100;
-            const widthPct = Math.max(1, ((item.timestampEnd - item.timestampStart) / total) * 100);
-            const color = item.speakerColor || speakerColorMap[item.speakerId] || '#6366f1';
+            const start = item.timestampStart ?? 0;
+            const end = item.timestampEnd ?? start;
+            const startPct = (start / total) * 100;
+            const widthPct = Math.max(1, ((end - start) / total) * 100);
+            const color =
+              item.speakerColor ||
+              (item.speakerId ? speakerColorMap[item.speakerId] : undefined) ||
+              (item.speakerName ? speakerColorMap[item.speakerName] : undefined) ||
+              '#94a3b8';
 
             return (
               <div
@@ -69,12 +92,12 @@ export const SpeakerTimeline: React.FC<SpeakerTimelineProps> = ({
                   backgroundColor: color,
                 }}
                 className="absolute top-0 bottom-0 opacity-80 hover:opacity-100 transition-opacity"
-                title={`${item.speakerName} (${formatSecondsToTime(item.timestampStart)} - ${formatSecondsToTime(item.timestampEnd)})`}
+                title={`${item.speakerName || 'Unknown speaker'} (${formatSecondsToTime(start)} - ${formatSecondsToTime(end)})`}
               />
             );
           })
         ) : (
-          <div className="w-full h-full bg-indigo-200/50" />
+          <div className="w-full h-full bg-slate-200" />
         )}
 
         {/* Current playback playhead line */}
@@ -89,22 +112,27 @@ export const SpeakerTimeline: React.FC<SpeakerTimelineProps> = ({
       {/* Speaker legend */}
       <div className="flex flex-wrap items-center gap-3 mt-2 text-[11px] text-slate-600">
         <span className="text-slate-400 font-medium">Speakers:</span>
-        {speakers.map((spk) => (
+        {validSpeakers.map((spk) => (
           <button
-            key={spk.id}
+            key={spk.id || spk.name}
             onClick={() => {
               // Seek to first utterance of this speaker
-              const firstUtt = transcript.find((t) => t.speakerId === spk.id || t.speakerName === spk.name);
-              if (firstUtt) onSeek(firstUtt.timestampStart);
+              const spkNameLower = (spk.name ?? '').trim().toLowerCase();
+              const firstUtt = (transcript || []).find(
+                (t) =>
+                  (t.speakerId && t.speakerId === spk.id) ||
+                  (spkNameLower && (t.speakerName ?? '').trim().toLowerCase() === spkNameLower)
+              );
+              if (firstUtt) onSeek(firstUtt.timestampStart ?? 0);
             }}
             className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-            title={`Jump to first utterance by ${spk.name}`}
+            title={`Jump to first utterance by ${spk.name || 'Unknown speaker'}`}
           >
             <span
               className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs"
-              style={{ backgroundColor: spk.color }}
+              style={{ backgroundColor: spk.color || '#94a3b8' }}
             />
-            <span className="font-medium text-slate-700">{spk.name}</span>
+            <span className="font-medium text-slate-700">{spk.name || 'Unknown speaker'}</span>
           </button>
         ))}
       </div>

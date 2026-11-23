@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Play, Filter } from 'lucide-react';
 import { TranscriptUtterance, Speaker } from '../../types/meeting';
 import { formatSecondsToTime } from '../../utils/formatters';
@@ -19,10 +19,30 @@ export const TranscriptTab: React.FC<TranscriptTabProps> = ({
   const [filterText, setFilterText] = useState('');
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('all');
 
+  // Filter out empty names and duplicate speakers for filter list
+  const validSpeakers = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Speaker[] = [];
+    for (const spk of (speakers || [])) {
+      const name = (spk.name ?? '').trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({ ...spk, name });
+      }
+    }
+    return list;
+  }, [speakers]);
+
   const filteredTranscript = transcript.filter((item) => {
-    const matchesText = item.text.toLowerCase().includes(filterText.toLowerCase()) ||
-      item.speakerName.toLowerCase().includes(filterText.toLowerCase());
-    const matchesSpeaker = selectedSpeaker === 'all' || item.speakerId === selectedSpeaker || item.speakerName === selectedSpeaker;
+    const matchesText =
+      (item.text ?? '').toLowerCase().includes(filterText.toLowerCase()) ||
+      (item.speakerName ?? '').toLowerCase().includes(filterText.toLowerCase());
+    const matchesSpeaker =
+      selectedSpeaker === 'all' ||
+      (item.speakerId != null && item.speakerId === selectedSpeaker) ||
+      (item.speakerName ?? '').trim().toLowerCase() === selectedSpeaker.toLowerCase();
     return matchesText && matchesSpeaker;
   });
 
@@ -50,9 +70,9 @@ export const TranscriptTab: React.FC<TranscriptTabProps> = ({
             onChange={(e) => setSelectedSpeaker(e.target.value)}
             className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none cursor-pointer"
           >
-            <option value="all">All Speakers ({speakers.length})</option>
-            {speakers.map((spk) => (
-              <option key={spk.id} value={spk.id}>
+            <option value="all">All Speakers ({validSpeakers.length})</option>
+            {validSpeakers.map((spk) => (
+              <option key={spk.id || spk.name} value={spk.name}>
                 {spk.name}
               </option>
             ))}
@@ -64,8 +84,9 @@ export const TranscriptTab: React.FC<TranscriptTabProps> = ({
       <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
         {filteredTranscript.length > 0 ? (
           filteredTranscript.map((utterance) => {
-            const isCurrent =
-              currentTime >= utterance.timestampStart && currentTime <= utterance.timestampEnd;
+            const start = utterance.timestampStart ?? 0;
+            const end = utterance.timestampEnd ?? start;
+            const isCurrent = currentTime >= start && currentTime <= end;
 
             return (
               <div
@@ -80,18 +101,18 @@ export const TranscriptTab: React.FC<TranscriptTabProps> = ({
                   <div className="flex items-center gap-2">
                     <span
                       className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: utterance.speakerColor || '#4f46e5' }}
+                      style={{ backgroundColor: utterance.speakerColor || '#94a3b8' }}
                     />
-                    <span className="text-xs font-bold text-slate-900">{utterance.speakerName}</span>
+                    <span className="text-xs font-bold text-slate-900">{utterance.speakerName || 'Unknown speaker'}</span>
                   </div>
 
                   <button
-                    onClick={() => onSeek(utterance.timestampStart)}
+                    onClick={() => onSeek(start)}
                     className="flex items-center gap-1 text-[11px] font-mono text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded transition-colors group"
                     title="Jump to this point in recording"
                   >
                     <Play className="w-2.5 h-2.5 fill-current group-hover:scale-110 transition-transform" />
-                    <span>{formatSecondsToTime(utterance.timestampStart)}</span>
+                    <span>{formatSecondsToTime(start)}</span>
                   </button>
                 </div>
 

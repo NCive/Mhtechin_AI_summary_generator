@@ -603,4 +603,173 @@ def test_upload_db_failure_cleans_up_media(monkeypatch):
                     assert original_wav.read_bytes() != fake_file
 
 
+def test_meeting_detail_contract_and_null_speaker():
+    meeting_id = str(uuid.uuid4())
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO meetings (
+                id, title, folder, slot_name, status, language, source, media_type,
+                created_at, overview, project_progress, challenges, next_steps
+            ) VALUES (?, 'Contract Meeting', 'General', 'Slot 1', 'done', 'en', 'upload', 'audio',
+                      '2026-11-23T10:00:00Z', 'Overview text', '["Progress A"]', '["Challenge B"]', '["Next C"]')""",
+            (meeting_id,),
+        )
+        conn.execute(
+            """INSERT INTO speakers (meeting_id, name, color, talk_seconds, talk_percent, listen_percent)
+               VALUES (?, 'Bob', '#5932ea', 120.0, 60.0, 40.0)""",
+            (meeting_id,),
+        )
+        # 3 transcript rows: one with null speaker, one with Bob (in speakers), one with Alice (not in speakers)
+        conn.execute(
+            """INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text)
+               VALUES (?, 0.0, 5.0, NULL, 'Hello world from unknown')""",
+            (meeting_id,),
+        )
+        conn.execute(
+            """INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text)
+               VALUES (?, 5.0, 10.0, 'Bob', 'I will handle the deployment')""",
+            (meeting_id,),
+        )
+        conn.execute(
+            """INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text)
+               VALUES (?, 10.0, 15.0, 'Alice', 'Sounds good to me')""",
+            (meeting_id,),
+        )
+        conn.execute(
+            """INSERT INTO action_items (id, meeting_id, text, owner, deadline, done)
+               VALUES ('ai-1', ?, 'Handle deployment', 'Bob', 'tomorrow', 0)""",
+            (meeting_id,),
+        )
+
+    with TestClient(app) as client:
+        res = client.get(f"/api/v1/meetings/{meeting_id}")
+        assert res.status_code == 200
+        data = res.json()
+
+        # 1. Top-level keys check
+        expected_detail_keys = {
+            "id", "meetingId", "title", "folder", "slotName", "status", "language",
+            "meetingUrl", "createdAt", "date", "summary", "transcript", "speakers",
+            "actionItems", "mediaUrl", "mediaType", "processedSeconds", "durationSeconds",
+            "participantsCount", "error"
+        }
+        assert expected_detail_keys.issubset(data.keys())
+
+        # 2. Transcript rows check
+        assert len(data["transcript"]) == 3
+        expected_transcript_keys = {
+            "id", "timestampStart", "timestampEnd", "speakerName", "speakerColor", "text"
+        }
+        for ut in data["transcript"]:
+            assert set(ut.keys()) == expected_transcript_keys
+            # No legacy keys allowed
+            assert "startTime" not in ut
+            assert "endTime" not in ut
+            assert "speaker" not in ut
+
+        # Row 1: Null speaker -> "Unknown speaker" and null color
+        ut1 = data["transcript"][0]
+        assert ut1["speakerName"] == "Unknown speaker"
+        assert ut1["speakerColor"] is None
+        assert ut1["timestampStart"] == 0.0
+        assert ut1["timestampEnd"] == 5.0
+
+        # Row 2: Bob -> "Bob" and "#5932ea"
+        ut2 = data["transcript"][1]
+        assert ut2["speakerName"] == "Bob"
+        assert ut2["speakerColor"] == "#5932ea"
+
+        # Row 3: Alice -> "Alice" and null color (not in speakers table)
+        ut3 = data["transcript"][2]
+        assert ut3["speakerName"] == "Alice"
+        assert ut3["speakerColor"] is None
+
+        # 3. Speakers keys check
+        assert len(data["speakers"]) == 1
+        expected_speaker_keys = {
+            "id", "name", "color", "role", "avatar", "talkDurationSeconds",
+            "talkPercentage", "listenPercentage", "talkSeconds", "talkPercent",
+            "listenPercent", "speakingTime"
+        }
+        assert set(data["speakers"][0].keys()) == expected_speaker_keys
+        spk = data["speakers"][0]
+        assert spk["talkDurationSeconds"] == 120.0
+        assert spk["talkPercentage"] == 60.0
+        assert spk["listenPercentage"] == 40.0
+
+        # 4. Action items keys check
+        assert len(data["actionItems"]) == 1
+        expected_action_keys = {"id", "task", "description", "assignee", "dueDate", "done", "completed"}
+        assert set(data["actionItems"][0].keys()) == expected_action_keys
+        ai = data["actionItems"][0]
+        assert ai["task"] == "Handle deployment"
+        assert ai["assignee"] == "Bob"
+
+        # 5. Summary keys check
+        expected_summary_keys = {
+            "overview", "projectProgress", "challenges", "challengesFaced", "actionItems", "nextSteps"
+        }
+        assert set(data["summary"].keys()) == expected_summary_keys
+
+
+def test_list_endpoint_search_fts5():
+    m1 = str(uuid.uuid4())
+    m2 = str(uuid.uuid4())
+
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO meetings (id, title, overview, status) VALUES (?, 'Architecture Discussion', 'Overview A', 'done')",
+            (m1,),
+        )
+        conn.execute(
+            "INSERT INTO meetings (id, title, overview, status) VALUES (?, 'Marketing Sync', 'Overview B', 'done')",
+            (m2,),
+        )
+        # m1 has two segments containing 'migration'
+        conn.execute(
+            "INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text) VALUES (?, 0.0, 5.0, 'Bob', 'Planning a database migration next week')",
+            (m1,),
+        )
+        conn.execute(
+            "INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text) VALUES (?, 5.0, 10.0, 'Carol', 'The migration script is ready')",
+            (m1,),
+        )
+        # m2 has unrelated segments
+        conn.execute(
+            "INSERT INTO transcript_segments (meeting_id, start_time, end_time, speaker, text) VALUES (?, 0.0, 5.0, 'Dave', 'Discussing branding and banners')",
+            (m2,),
+        )
+
+    with TestClient(app) as client:
+        # 1. Whole word search finds the meeting
+        res = client.get("/api/v1/meetings?q=migration")
+        assert res.status_code == 200
+        ids = [it["meetingId"] for it in res.json()]
+        assert m1 in ids
+        assert m2 not in ids
+
+        # 2. Word prefix search (e.g. "migr" for "migration") finds it
+        res_prefix = client.get("/api/v1/meetings?q=migr")
+        assert res_prefix.status_code == 200
+        ids_prefix = [it["meetingId"] for it in res_prefix.json()]
+        assert m1 in ids_prefix
+        assert m2 not in ids_prefix
+
+        # 3. Query with quote character does not crash
+        res_quote = client.get('/api/v1/meetings?q="migration"')
+        assert res_quote.status_code == 200
+        ids_quote = [it["meetingId"] for it in res_quote.json()]
+        assert m1 in ids_quote
+
+        res_malformed_quote = client.get('/api/v1/meetings?q="migr"ation')
+        assert res_malformed_quote.status_code == 200
+
+        # 4. Meeting with several matching rows appears exactly once
+        res_count = client.get("/api/v1/meetings?q=migration")
+        assert res_count.status_code == 200
+        matching_m1 = [it for it in res_count.json() if it["meetingId"] == m1]
+        assert len(matching_m1) == 1, "Meeting with multiple matching transcript segments must appear only once"
+
+
+
 

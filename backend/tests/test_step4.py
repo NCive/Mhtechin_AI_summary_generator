@@ -4,14 +4,10 @@ pipeline integration, and background worker lifecycle.
 from __future__ import annotations
 
 import asyncio
-import json
-import sqlite3
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from app.core.config import settings
 from app.db.database import get_db, init_db
 from app.services.audio import (
@@ -85,18 +81,22 @@ class TestAudioExtraction:
         media_file = tmp_path / "test.mp4"
         media_file.write_bytes(b"dummy")
 
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            with pytest.raises(FileNotFoundError, match="ffprobe binary not found"):
-                get_media_duration(media_file)
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError),
+            pytest.raises(FileNotFoundError, match="ffprobe binary not found"),
+        ):
+            get_media_duration(media_file)
 
     def test_get_media_duration_failure(self, tmp_path):
         media_file = tmp_path / "corrupt.mp4"
         media_file.write_bytes(b"bad")
 
         mock_proc = MagicMock(returncode=1, stdout="", stderr="Invalid data found")
-        with patch("subprocess.run", return_value=mock_proc):
-            with pytest.raises(RuntimeError, match="ffprobe failed"):
-                get_media_duration(media_file)
+        with (
+            patch("subprocess.run", return_value=mock_proc),
+            pytest.raises(RuntimeError, match="ffprobe failed"),
+        ):
+            get_media_duration(media_file)
 
     def test_extract_audio_to_wav_success(self, tmp_path):
         media_dir = Path(settings.MEDIA_DIR)
@@ -119,6 +119,15 @@ class TestAudioExtraction:
         with pytest.raises(ValueError, match="not a valid file|does not exist"):
             extract_audio_to_wav(nonexistent)
 
+    def test_extract_audio_to_wav_refuses_existing_file_outside_media_dir(self, tmp_path):
+        outside_file = tmp_path / "outside.mp4"
+        outside_file.write_bytes(b"some media data")
+        assert outside_file.exists()
+        assert not outside_file.resolve().is_relative_to(Path(settings.MEDIA_DIR).resolve())
+
+        with pytest.raises(ValueError, match="outside MEDIA_DIR"):
+            extract_audio_to_wav(outside_file)
+
     def test_extract_temporary_wav_cleans_up_on_success_and_error(self, tmp_path):
         media_dir = Path(settings.MEDIA_DIR)
         media_file = media_dir / "clean_test.mp3"
@@ -138,14 +147,15 @@ class TestAudioExtraction:
             assert not created_wav.exists()
 
         # Test cleanup on exception inside block
-        with patch("app.services.audio.get_media_duration", return_value=15.0), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
-
-            with pytest.raises(ZeroDivisionError):
-                with extract_temporary_wav(media_file) as (wav_path, duration):
-                    created_wav = wav_path
-                    assert wav_path.exists()
-                    _ = 1 / 0
+        with (
+            patch("app.services.audio.get_media_duration", return_value=15.0),
+            patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")),
+            pytest.raises(ZeroDivisionError),
+            extract_temporary_wav(media_file) as (wav_path, duration),
+        ):
+            created_wav = wav_path
+            assert wav_path.exists()
+            _ = 1 / 0
 
             # Verified clean up after exception
             assert not created_wav.exists()
@@ -280,6 +290,14 @@ class TestPipeline:
             assert len(action_items) == 1
             assert action_items[0]["text"] == "Deliver slides"
 
+        # Assert that GET /meetings/{id} maps 'done' to 'completed'
+        from app.main import app
+        from fastapi.testclient import TestClient
+        api_client = TestClient(app)
+        res = api_client.get(f"/api/v1/meetings/{meeting_id}")
+        assert res.status_code == 200
+        assert res.json()["status"] == "completed"
+
     def test_process_meeting_pipeline_silence_handling(self, tmp_path):
         meeting_id = "mtg-pipe-silence"
         media_file = Path(settings.MEDIA_DIR) / f"{meeting_id}.mp3"
@@ -287,6 +305,7 @@ class TestPipeline:
         _create_meeting(meeting_id, media_path=str(media_file))
 
         with patch("app.services.pipeline.extract_temporary_wav") as mock_extract, \
+             patch("app.services.pipeline.is_server_ready", return_value=True), \
              patch("app.services.pipeline.transcribe_audio", return_value=[]):
 
             mock_extract.return_value.__enter__.return_value = (tmp_path / "silent.wav", 20.0)
@@ -313,6 +332,7 @@ class TestPipeline:
         }
 
         with patch("app.services.pipeline.extract_temporary_wav") as mock_extract, \
+             patch("app.services.pipeline.is_server_ready", return_value=True), \
              patch("app.services.pipeline.transcribe_audio", return_value=fake_segments), \
              patch("app.services.pipeline.process_transcript_windows", return_value=[failed_window_result]):
 
@@ -320,6 +340,62 @@ class TestPipeline:
 
             with pytest.raises(RuntimeError, match="Window 0 extraction failed"):
                 process_meeting_pipeline(meeting_id)
+
+    def test_pipeline_raises_llm_unavailable_at_start(self, tmp_path):
+        from app.services.llm import LLMUnavailable
+
+        meeting_id = "mtg-pipe-no-llm"
+        media_file = Path(settings.MEDIA_DIR) / f"{meeting_id}.mp4"
+        media_file.write_bytes(b"media")
+        _create_meeting(meeting_id, media_path=str(media_file))
+
+        with patch("app.services.pipeline.is_server_ready", return_value=False), \
+             patch("app.services.pipeline.extract_temporary_wav") as mock_extract:
+            with pytest.raises(LLMUnavailable, match="LLM server is not ready"):
+                process_meeting_pipeline(meeting_id)
+
+            # ffmpeg / extract_temporary_wav should never be called when server is offline
+            mock_extract.assert_not_called()
+
+    def test_pipeline_deletes_old_windows_at_start_of_run(self, tmp_path):
+        meeting_id = "mtg-pipe-old-windows"
+        media_file = Path(settings.MEDIA_DIR) / f"{meeting_id}.mp4"
+        media_file.write_bytes(b"media")
+        _create_meeting(meeting_id, media_path=str(media_file))
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO windows (meeting_id, window_index, start_time, end_time, result_json) "
+                "VALUES (?, 0, 0.0, 5.0, '{}')",
+                (meeting_id,),
+            )
+            old_count = conn.execute("SELECT count(*) FROM windows WHERE meeting_id=?", (meeting_id,)).fetchone()[0]
+            assert old_count == 1
+
+        fake_segments = [{"start_time": 0.0, "end_time": 5.0, "speaker": None, "text": "Speech."}]
+        fake_notes = {
+            "summary": "Meeting notes",
+            "project_progress": [],
+            "challenges": [],
+            "action_items": [],
+            "next_steps": [],
+        }
+
+        deleted_during_run = []
+        def mock_windowing(m_id, segs, conn, client=None):
+            cnt = conn.execute("SELECT count(*) FROM windows WHERE meeting_id=?", (m_id,)).fetchone()[0]
+            deleted_during_run.append(cnt)
+            return [fake_notes]
+
+        with patch("app.services.pipeline.extract_temporary_wav") as mock_extract, \
+             patch("app.services.pipeline.transcribe_audio", return_value=fake_segments), \
+             patch("app.services.pipeline.is_server_ready", return_value=True), \
+             patch("app.services.pipeline.process_transcript_windows", side_effect=mock_windowing):
+
+            mock_extract.return_value.__enter__.return_value = (tmp_path / "w.wav", 5.0)
+            process_meeting_pipeline(meeting_id)
+
+        assert deleted_during_run == [0], "Stale windows should have been deleted at the start of the pipeline run"
 
 
 # ===========================================================================
@@ -390,3 +466,56 @@ class TestBackgroundWorker:
             assert manager._task is None
 
         asyncio.run(_test())
+
+    def test_worker_loop_waits_when_server_not_ready(self, caplog):
+        import logging
+
+        from app.services.worker import worker_loop
+
+        m_id = "mtg-worker-wait"
+        _create_meeting(m_id, source="upload", status="pending", media_path="C:/media/test.mp4")
+
+        ready_states = [False, True]
+        def mock_ready():
+            if ready_states:
+                return ready_states.pop(0)
+            return True
+
+        async def _run():
+            with (
+                caplog.at_level(logging.INFO),
+                patch("app.services.worker.is_server_ready", side_effect=mock_ready),
+                patch("app.services.worker.process_meeting_pipeline"),
+                patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError()]),
+            ):
+                try:
+                    await worker_loop()
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(_run())
+        assert any("LLM server is not ready; worker is waiting" in record.message for record in caplog.records)
+        assert any("LLM server is now ready; worker resuming" in record.message for record in caplog.records)
+
+    def test_worker_defers_meeting_to_pending_on_llm_unavailable(self):
+        from app.services.llm import LLMUnavailable
+        from app.services.worker import worker_loop
+
+        m_id = "mtg-worker-defer"
+        _create_meeting(m_id, source="upload", status="pending", media_path="C:/media/test.mp4")
+
+        async def _run():
+            with patch("app.services.worker.is_server_ready", return_value=True), \
+                 patch("app.services.worker.process_meeting_pipeline", side_effect=LLMUnavailable("server down")), \
+                 patch("asyncio.sleep", side_effect=[asyncio.CancelledError()]):
+                try:
+                    await worker_loop()
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(_run())
+
+        with get_db() as conn:
+            row = conn.execute("SELECT status, error FROM meetings WHERE id = ?", (m_id,)).fetchone()
+            assert row["status"] == "pending"
+            assert "Deferred" in str(row["error"])

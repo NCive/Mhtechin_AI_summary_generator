@@ -11,7 +11,7 @@ interface SpeakersTabProps {
 export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers }) => {
   return (
     <div className="space-y-3">
-      {speakers.map((spk) => (
+      {(speakers || []).map((spk) => (
         <div
           key={spk.id}
           className="p-4 bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:border-slate-300 transition-all"
@@ -20,13 +20,13 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers }) => {
             <div className="flex items-center gap-2.5">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-2xs"
-                style={{ backgroundColor: spk.color }}
+                style={{ backgroundColor: spk.color || '#94a3b8' }}
               >
-                {spk.name.charAt(0)}
+                {(spk.name ?? '').trim() ? (spk.name ?? '').trim().charAt(0).toUpperCase() : '?'}
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-900">{spk.name}</h4>
-                <p className="text-[11px] text-slate-400">{spk.role}</p>
+                <h4 className="text-xs font-bold text-slate-900">{spk.name || 'Unknown speaker'}</h4>
+                {spk.role && <p className="text-[11px] text-slate-400">{spk.role}</p>}
               </div>
             </div>
 
@@ -41,7 +41,7 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers }) => {
               className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${spk.talkPercentage}%`,
-                backgroundColor: spk.color,
+                backgroundColor: spk.color || '#94a3b8',
               }}
             />
           </div>
@@ -50,7 +50,7 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers }) => {
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
             <div className="flex items-center gap-1">
               <MessageSquare className="w-3 h-3 text-slate-400" />
-              <span>{formatSecondsToTime(spk.talkDurationSeconds || 0)}</span>
+              <span>{formatSecondsToTime(spk.talkDurationSeconds ?? 0)}</span>
             </div>
             {spk.listenPercentage != null && (
               <div className="flex items-center gap-1">

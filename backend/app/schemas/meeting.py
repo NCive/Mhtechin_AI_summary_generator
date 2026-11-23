@@ -1,5 +1,6 @@
-from typing import Any, List, Optional
+from typing import Any
 from pydantic import BaseModel, Field, model_validator
+
 
 class JoinMeetingRequest(BaseModel):
     meetingUrl: str = Field(..., alias="meetingUrl")
@@ -18,21 +19,25 @@ class JoinMeetingRequest(BaseModel):
                 data["slotName"] = data["slot_name"]
         return data
 
+
 class UploadMeetingResponse(BaseModel):
     meetingId: str
     status: str
 
+
 class MeetingListItem(BaseModel):
     meetingId: str
     id: str | None = None
-    title: Optional[str] = None
-    overview: Optional[str] = None
-    createdAt: Optional[str] = None
+    title: str | None = None
+    overview: str | None = None
+    createdAt: str | None = None
     date: str | None = None
-    status: Optional[str] = None
+    status: str | None = None
+
 
 class UpdateActionItemRequest(BaseModel):
     done: bool
+
 
 class ActionItemResponse(BaseModel):
     id: str
@@ -41,6 +46,7 @@ class ActionItemResponse(BaseModel):
     dueDate: str | None = None
     done: bool
 
+
 class ActionItem(BaseModel):
     id: str
     task: str | None = None
@@ -48,25 +54,60 @@ class ActionItem(BaseModel):
     assignee: str | None = None
     dueDate: str | None = None
     done: bool
+    completed: bool | None = None
+
 
 class Speaker(BaseModel):
     id: str
-    name: Optional[str] = None
-    speakingTime: Optional[float] = None
+    name: str | None = None
+    color: str | None = None
+    role: str | None = None
+    avatar: str | None = None
+    talkDurationSeconds: float | None = None
+    talkPercentage: float | None = None
+    listenPercentage: float | None = None
+    talkSeconds: float | None = None
+    talkPercent: float | None = None
+    listenPercent: float | None = None
+    speakingTime: float | None = None
+
+
+class TranscriptUtterance(BaseModel):
+    id: str
+    timestampStart: float | None = None
+    timestampEnd: float | None = None
+    speakerName: str
+    speakerColor: str | None = None
+    text: str
+
+
+class MeetingSummaryResponse(BaseModel):
+    overview: str | None = None
+    projectProgress: list[str] | None = None
+    challenges: list[str] | None = None
+    challengesFaced: list[str] | None = None
+    actionItems: list[ActionItem] | None = None
+    nextSteps: list[str] | None = None
+
 
 class MeetingDetailResponse(BaseModel):
     meetingId: str
     id: str | None = None
-    title: Optional[str] = None
-    status: Optional[str] = None
+    title: str | None = None
+    folder: str | None = None
+    slotName: str | None = None
+    status: str | None = None
+    language: str | None = None
+    meetingUrl: str | None = None
     createdAt: str | None = None
     date: str | None = None
-    summary: Optional[dict] = None
-    transcript: Optional[List[dict]] = None
-    speakers: Optional[List[Speaker]] = None
-    actionItems: Optional[List[ActionItem]] = None
-    mediaUrl: Optional[str] = None
+    summary: MeetingSummaryResponse | None = None
+    transcript: list[TranscriptUtterance] | None = None
+    speakers: list[Speaker] | None = None
+    actionItems: list[ActionItem] | None = None
+    mediaUrl: str | None = None
     mediaType: str | None = None
     processedSeconds: float | None = None
     durationSeconds: float | None = None
+    participantsCount: int | None = None
     error: str | None = None

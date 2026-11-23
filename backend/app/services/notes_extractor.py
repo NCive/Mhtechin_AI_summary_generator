@@ -124,6 +124,26 @@ FILLER_PATTERNS = [
 ]
 
 
+INVALID_OWNER_NAMES = {
+    "unknown speaker",
+    "unknown",
+    "none",
+    "null",
+    "nil",
+    "n/a",
+    "",
+}
+
+
+def _clean_owner(owner: str | None) -> str | None:
+    if not owner:
+        return None
+    cleaned = str(owner).strip()
+    if not cleaned or cleaned.lower() in INVALID_OWNER_NAMES:
+        return None
+    return cleaned
+
+
 def _has_commitment(text: str) -> bool:
     t = text.lower()
     return any(re.search(p, t) for p in COMMITMENT_PATTERNS)
@@ -212,13 +232,13 @@ def verify_notes(
                     continue
                 owner = None
             elif has_commit:
-                owner = line_speaker
+                owner = _clean_owner(line_speaker)
             else:
                 owner = None
 
         verified_items.append({
             "text": str(text).strip(),
-            "owner": owner,
+            "owner": _clean_owner(owner),
             "deadline": verified_deadline,
             "source_time": norm_source_time,
         })
