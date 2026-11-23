@@ -24,6 +24,7 @@ def isolate_test_environment(tmp_path_factory):
 
     settings.DB_PATH = str(temp_db)
     settings.MEDIA_DIR = str(temp_media)
+    settings.ENABLE_BACKGROUND_WORKER = False
 
     init_db()
 

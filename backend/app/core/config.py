@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: int = 300
     LLM_MAX_TOKENS: int = 800
     WHISPER_MODEL: str = "base"
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
+    FFMPEG_PATH: str = "ffmpeg"
+    FFPROBE_PATH: str = "ffprobe"
+    WORKER_POLL_INTERVAL: float = 2.0
+    ENABLE_BACKGROUND_WORKER: bool = True
     MAX_UPLOAD_MB: int = 2000
 
 

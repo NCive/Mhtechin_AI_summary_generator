@@ -3,13 +3,16 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
+from app.services.worker import worker_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize SQLite database and create tables on startup
     init_db()
+    worker_manager.start()
     yield
+    await worker_manager.stop()
 
 
 app = FastAPI(
