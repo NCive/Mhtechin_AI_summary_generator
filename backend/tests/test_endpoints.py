@@ -272,9 +272,9 @@ def test_detail_endpoint():
         assert data["status"] == "scheduled"
         assert data["transcript"] == []
         assert data["speakers"] == []
-        assert data["topics"] == []
+        assert "topics" not in data
         assert data["actionItems"] == []
-        assert data["analytics"] is None
+        assert "analytics" not in data
         assert data["summary"] is None
         assert data["mediaUrl"] is None
         assert data["mediaType"] is None
@@ -506,5 +506,101 @@ def test_media_headers_and_playback():
         assert r_416.status_code == 416
         assert r_416.headers.get("accept-ranges") == "bytes"
         assert r_416.headers.get("content-range") == f"bytes */{len(fake_mp4)}"
+
+
+def test_wal_concurrent_read_write(tmp_path):
+    from app.db.database import SCHEMA_PATH, get_db_connection
+
+    db_file = tmp_path / "test_wal_concurrent.db"
+    conn1 = get_db_connection(str(db_file))
+    conn2 = get_db_connection(str(db_file))
+    try:
+        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+            schema_sql = f.read()
+        conn1.executescript(schema_sql)
+        conn1.commit()
+
+        # Connection 1 writes in a transaction without committing
+        conn1.execute("BEGIN IMMEDIATE")
+        conn1.execute(
+            "INSERT INTO meetings (id, source, language, slot_name, status) VALUES ('wal-m1', 'join', 'en', 'Slot', 'pending')"
+        )
+
+        # Connection 2 reads simultaneously without blocking or failing with 'database is locked'
+        rows = conn2.execute("SELECT COUNT(*) FROM meetings").fetchone()
+        assert rows[0] == 0
+
+        # Connection 1 commits
+        conn1.commit()
+
+        # Connection 2 now sees the written row
+        rows_after = conn2.execute("SELECT COUNT(*) FROM meetings").fetchone()
+        assert rows_after[0] == 1
+    finally:
+        conn1.close()
+        conn2.close()
+
+
+def test_media_outside_media_dir_returns_403():
+    with TestClient(app) as client:
+        outside_id = str(uuid.uuid4())
+        media_root = Path(settings.MEDIA_DIR).resolve()
+        outside_file = media_root.parent / f"outside_secret_{outside_id}.mp4"
+        outside_file.write_bytes(b"secret_data")
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO meetings (id, source, language, slot_name, status, media_path) VALUES (?, 'upload', 'en', 'Slot', 'pending', ?)",
+                    (outside_id, str(outside_file)),
+                )
+            res = client.get(f"/api/v1/meetings/{outside_id}/media")
+            assert res.status_code == 403
+            assert "Invalid media path" in res.json()["detail"]
+        finally:
+            if outside_file.exists():
+                outside_file.unlink()
+
+
+def test_upload_db_failure_cleans_up_media(monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    with TestClient(app) as client:
+        import app.services.meeting_service as ms
+
+        real_get_db = ms.get_db
+
+        @contextmanager
+        def mock_get_db():
+            with real_get_db() as real_conn:
+                class FailConn:
+                    def __getattr__(self, name):
+                        return getattr(real_conn, name)
+
+                    def execute(self, sql, *args, **kwargs):
+                        if "INSERT INTO meetings" in str(sql):
+                            raise sqlite3.OperationalError("Simulated DB failure")
+                        return real_conn.execute(sql, *args, **kwargs)
+
+                yield FailConn()
+
+        monkeypatch.setattr(ms, "get_db", mock_get_db)
+
+        fake_file = b"RIFFfake_audio_content_for_fail_test"
+        res = client.post(
+            "/api/v1/meetings/upload",
+            files={"file": ("fail_test.wav", fake_file, "audio/wav")},
+            data={"language": "en", "slot_name": "Fail Slot"},
+        )
+        assert res.status_code == 500
+
+        # Verify no folder or file left in MEDIA_DIR for this failed upload
+        media_root = Path(settings.MEDIA_DIR)
+        for child in media_root.iterdir():
+            if child.is_dir():
+                original_wav = child / "original.wav"
+                if original_wav.exists():
+                    assert original_wav.read_bytes() != fake_file
+
 
 

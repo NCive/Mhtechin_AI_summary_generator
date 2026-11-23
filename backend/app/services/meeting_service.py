@@ -177,26 +177,10 @@ def get_meeting_detail(meeting_id: str) -> dict:
             (meeting_id,)
         ).fetchall()
 
-        try:
-            topic_rows = conn.execute(
-                "SELECT * FROM topics WHERE meeting_id = ?",
-                (meeting_id,)
-            ).fetchall()
-        except Exception:
-            topic_rows = []
-
         action_rows = conn.execute(
             "SELECT * FROM action_items WHERE meeting_id = ?",
             (meeting_id,)
         ).fetchall()
-
-        try:
-            analytics_row = conn.execute(
-                "SELECT * FROM analytics WHERE meeting_id = ?",
-                (meeting_id,)
-            ).fetchone()
-        except Exception:
-            analytics_row = None
 
         media_url = f"/api/v1/meetings/{meeting_id}/media" if meeting_row["media_path"] else None
 
@@ -204,9 +188,7 @@ def get_meeting_detail(meeting_id: str) -> dict:
             meeting=dict(meeting_row),
             transcript=[dict(r) for r in transcript_rows],
             speakers=[dict(r) for r in speaker_rows],
-            topics=[dict(r) for r in topic_rows],
             action_items=[dict(r) for r in action_rows],
-            analytics=dict(analytics_row) if analytics_row else None,
             media_url=media_url,
         )
 

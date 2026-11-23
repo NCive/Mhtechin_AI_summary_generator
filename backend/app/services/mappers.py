@@ -57,27 +57,6 @@ def map_meeting_list_item(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def map_meeting_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    """Map a meeting table row to camelCase dict.
-    Handles status mapping for pending -> scheduled and done -> completed.
-    Leaves other status values unchanged.
-    """
-    mapping = {
-        "meetingId": str(row.get("meeting_id") or row.get("id")),
-        "title": row.get("title"),
-        "status": _map_status(row.get("status")),
-        "overview": row.get("overview"),
-        "projectProgress": row.get("project_progress"),
-        "challenges": row.get("challenges"),
-        "nextSteps": row.get("next_steps"),
-        "createdAt": row.get("created_at"),
-        "durationSeconds": row.get("duration_seconds"),
-        "processedSeconds": row.get("processed_seconds"),
-        "mediaPath": row.get("media_path"),
-    }
-    return {k: v for k, v in mapping.items() if v is not None}
-
-
 def map_transcript_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -130,33 +109,11 @@ def map_action_item_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def map_topic_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": str(r.get("id")),
-            "name": r.get("name"),
-        }
-        for r in rows
-    ]
-
-
-def map_analytics_row(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not row:
-        return None
-    return {
-        "participantCount": row.get("participant_count"),
-        "durationSeconds": row.get("duration_seconds"),
-        "processedSeconds": row.get("processed_seconds"),
-    }
-
-
 def map_meeting_detail(
     meeting: dict[str, Any],
     transcript: list[dict[str, Any]],
     speakers: list[dict[str, Any]],
-    topics: list[dict[str, Any]],
     action_items: list[dict[str, Any]],
-    analytics: dict[str, Any] | None = None,
     media_url: str | None = None,
 ) -> dict[str, Any]:
     def _parse_json(val: Any) -> Any:
@@ -197,9 +154,7 @@ def map_meeting_detail(
         "summary": summary,
         "transcript": map_transcript_rows(transcript),
         "speakers": map_speaker_rows(speakers),
-        "topics": map_topic_rows(topics),
         "actionItems": map_action_item_rows(action_items),
-        "analytics": map_analytics_row(analytics),
         "mediaUrl": media_url,
         "mediaType": meeting.get("media_type") or meeting.get("mediaType"),
         "processedSeconds": meeting.get("processed_seconds") if meeting.get("processed_seconds") is not None else meeting.get("processedSeconds"),

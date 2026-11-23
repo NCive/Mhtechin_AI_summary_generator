@@ -105,8 +105,8 @@ def test_action_item_patch_and_mappers():
         assert detail_data["status"] == "scheduled"
         assert detail_data["transcript"] == []
         assert detail_data["speakers"] == []
-        assert detail_data["topics"] == []
-        assert detail_data["analytics"] is None
+        assert "topics" not in detail_data
+        assert "analytics" not in detail_data
         assert len(detail_data["actionItems"]) == 1
         assert detail_data["actionItems"][0]["id"] == item_id_1
         assert detail_data["actionItems"][0]["task"] == "Complete audit repair"

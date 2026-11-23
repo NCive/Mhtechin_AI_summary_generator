@@ -54,15 +54,6 @@ class Speaker(BaseModel):
     name: Optional[str] = None
     speakingTime: Optional[float] = None
 
-class Topic(BaseModel):
-    id: str
-    name: Optional[str] = None
-
-class Analytics(BaseModel):
-    participantCount: Optional[int] = None
-    durationSeconds: Optional[int] = None
-    processedSeconds: Optional[int] = None
-
 class MeetingDetailResponse(BaseModel):
     meetingId: str
     id: str | None = None
@@ -73,9 +64,7 @@ class MeetingDetailResponse(BaseModel):
     summary: Optional[dict] = None
     transcript: Optional[List[dict]] = None
     speakers: Optional[List[Speaker]] = None
-    topics: Optional[List[Topic]] = None
     actionItems: Optional[List[ActionItem]] = None
-    analytics: Optional[Analytics] = None
     mediaUrl: Optional[str] = None
     mediaType: str | None = None
     processedSeconds: float | None = None

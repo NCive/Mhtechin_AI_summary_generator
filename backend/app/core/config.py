@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: int = 300
     LLM_MAX_TOKENS: int = 800
     WHISPER_MODEL: str = "base"
-    MAX_UPLOAD_MB: int = 100
+    MAX_UPLOAD_MB: int = 2000
 
 
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000"]
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
                 import json
                 try:
                     return json.loads(v)
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     pass
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         elif isinstance(v, list):
