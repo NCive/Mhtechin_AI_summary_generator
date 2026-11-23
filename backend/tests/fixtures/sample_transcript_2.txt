@@ -1,0 +1,25 @@
+# ==============================================================================
+# TEST FIXTURE ONLY - Simulated Team Meeting Transcript #2
+# DO NOT USE AS PRODUCTION DATA
+# ==============================================================================
+[00:00] David: Good afternoon team, let us review the marketing launch plans.
+[00:25] Sarah: Thanks David. First, I wanted to discuss last quarter's metrics.
+[00:50] David: Right, our newsletter click-through rate dropped by five percent last quarter.
+[01:15] Michael: Yes, the old newsletter template was not mobile-responsive.
+[01:40] Priya: That explains the drop on mobile devices, but desktop remained steady.
+[02:05] David: Glad we identified the root cause of that past drop.
+[02:30] Sarah: On current progress, the new visual branding assets are fully complete.
+[02:55] Priya: Great to hear. However, the graphic designer had export issues with SVGs.
+[03:20] Michael: We resolved the SVG issue by converting them to optimized vector paths.
+[03:45] David: Sarah, can you review the competitor pricing analysis?
+[04:10] Sarah: Yes, I can take that on and review the competitor pricing.
+[04:35] David: Thanks Sarah. What about the website landing page copy?
+[05:00] Michael: I will finish drafting the landing page copy by Wednesday.
+[05:25] David: Excellent, by Wednesday works well for the design team.
+[05:50] Priya: Should we also prepare the social media announcement posts?
+[06:15] David: Yes, but let us decide who writes those next sprint.
+[06:40] Priya: Got it. We will all review the final launch checklist together next month.
+[07:05] David: Agreed, a full team review next month makes total sense.
+[07:30] Sarah: Are there any other blockers before we sign off?
+[07:55] Michael: None from my side, everything looks clear.
+[08:20] David: Great work everyone, thank you for your time.

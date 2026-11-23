@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     DB_PATH: str = str(Path(__file__).parent.parent.parent / "chatmeet.db")
     MEDIA_DIR: str = str(Path(__file__).parent.parent.parent / "media")
     LLM_MODEL_PATH: str = "Qwen2.5-1.5B-Instruct.Q8_0.gguf"
+    LLM_SERVER_URL: str = "http://127.0.0.1:8080"
+    LLM_TIMEOUT_SECONDS: int = 300
+    LLM_MAX_TOKENS: int = 800
     WHISPER_MODEL: str = "base"
     MAX_UPLOAD_MB: int = 100
 

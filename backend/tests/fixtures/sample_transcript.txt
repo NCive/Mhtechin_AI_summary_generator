@@ -1,0 +1,23 @@
+# ==============================================================================
+# TEST FIXTURE ONLY - Simulated Team Meeting Transcript
+# DO NOT USE AS PRODUCTION DATA
+# ==============================================================================
+[00:00] Alice: Good morning everyone. Let us start today's sprint check-in.
+[00:30] Bob: Morning Alice. I have updates on the authentication system.
+[01:00] Alice: Great, how is the OAuth2 migration going?
+[01:30] Bob: The core OAuth2 flow is fully implemented and tested locally.
+[02:00] Bob: However, we encountered an issue with refresh token expiry in Safari.
+[02:30] Charlie: Yes, Safari's cookie policy is blocking third-party storage.
+[03:00] Alice: That is definitely a blocker for the iOS webview users.
+[03:30] Charlie: We can switch to storing the session token in an HTTP-only secure cookie.
+[04:00] Bob: That sounds like the cleanest approach.
+[04:30] Alice: Bob, can you finalize the database migration by Friday?
+[05:00] Bob: Yes, I will finish the database migration by Friday afternoon.
+[05:30] Charlie: We also need to update the public API documentation before release.
+[06:00] Alice: Agreed. Someone needs to handle the docs update next sprint.
+[06:30] Bob: What about the load testing results?
+[07:00] Charlie: The API sustained 500 requests per second with sub-50ms latency.
+[07:30] Alice: Excellent progress overall.
+[08:00] Alice: For next steps, we will review the Safari fix on Monday.
+[08:30] Bob: Sounds good, I will send the pull request tomorrow.
+[09:00] Alice: Perfect, thank you all. Let us wrap up.
