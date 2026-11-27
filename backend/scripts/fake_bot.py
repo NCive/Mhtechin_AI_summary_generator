@@ -279,12 +279,6 @@ def main() -> None:
                 sys.exit(1)
             pcm2 = convert_to_pcm(args.wav2)
 
-    # Print real stream durations before sending
-    dur1 = len(pcm1) / 32000.0
-    dur2 = len(pcm2) / 32000.0
-    print(f"Speaker 1 ({args.name1}) stream duration: {dur1:.2f} s")
-    print(f"Speaker 2 ({args.name2}) stream duration: {dur2:.2f} s")
-
     # 2. Prepare WebSocket URL
     base_url = args.url.rstrip("/")
     if base_url.startswith("http://"):
@@ -298,7 +292,7 @@ def main() -> None:
         stream_url = f"{base_url}/api/v1/meetings/{meeting_id}/stream"
 
     # Only print meeting ID and "Connecting..." (NEVER print token or URL containing it)
-    print(f"Meeting ID: {meeting_id}")
+    print(meeting_id)
     print("Connecting...")
 
     headers = {"x-bot-token": token}
@@ -306,6 +300,10 @@ def main() -> None:
     try:
         with connect(stream_url, additional_headers=headers) as ws:
             print("Connected successfully!")
+            dur1 = len(pcm1) / 32000.0
+            dur2 = len(pcm2) / 32000.0
+            print(f"Speaker 1 ({args.name1}) stream duration: {dur1:.2f} s")
+            print(f"Speaker 2 ({args.name2}) stream duration: {dur2:.2f} s")
             stream_audio(ws, pcm1, pcm2, args)
     except ConnectionClosed as exc:
         code = exc.rcvd.code if getattr(exc, "rcvd", None) else getattr(exc, "code", "unknown")
