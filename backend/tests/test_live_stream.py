@@ -62,6 +62,7 @@ def setup_test_environment(tmp_path):
     settings.ENABLE_BACKGROUND_WORKER = False
     settings.BOT_INGEST_TOKEN = "test-bot-token"
     settings.BOT_DISCONNECT_TIMEOUT_SECONDS = 600
+    settings.BOT_ALLOW_QUERY_TOKEN = True
 
     init_db()
     live_session_manager.sessions.clear()
@@ -147,7 +148,7 @@ class TestWebSocketAuthAndSource:
         m_id = "mtg-auth-valid"
         _create_meeting(m_id, source="join", status="pending")
 
-        with client.websocket_connect(f"/api/v1/meetings/{m_id}/stream?token={settings.BOT_INGEST_TOKEN}"), get_db() as conn:
+        with patch.object(settings, "BOT_ALLOW_QUERY_TOKEN", True), client.websocket_connect(f"/api/v1/meetings/{m_id}/stream?token={settings.BOT_INGEST_TOKEN}"), get_db() as conn:
             row = conn.execute("SELECT status FROM meetings WHERE id = ?", (m_id,)).fetchone()
             assert row["status"] == "processing"
 

@@ -133,6 +133,12 @@ def sync_speakers_and_progress(
     )
 
 
+class SessionLimitExceeded(Exception):
+    def __init__(self, message: str, code: int = 1008):
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass
 class SpeakerBuffer:
     speaker_id: str
@@ -150,6 +156,9 @@ class LiveSession:
         self.language = language
         self.buffers: dict[str, SpeakerBuffer] = {}
         self.speaker_map: dict[str, str | None] = {}
+        self.active_websocket: Any | None = None
+        self.total_received_bytes = 0
+        self.session_start_time = time.monotonic()
         self._is_finalized = False
         self._disconnect_timer: asyncio.Task | None = None
         self._idle_task: asyncio.Task | None = None
@@ -165,18 +174,27 @@ class LiveSession:
     def register_speaker(self, speaker_id: str, speaker_name: str | None) -> str | None:
         """Map speaker_id to a unique display name, suffixing duplicates with ' (2)', ' (3)'.
         Never invents a name: if speaker_name is missing or empty, returns None.
+        Enforces MAX_SPEAKERS_PER_MEETING limit.
         """
-        # after a server restart the map is rebuilt in reconnect order,
-        # so two people with the same name could swap labels (rare,
-        # accepted for now)
         if not speaker_name or not str(speaker_name).strip():
             if speaker_id not in self.speaker_map:
+                if len(self.speaker_map) >= settings.MAX_SPEAKERS_PER_MEETING:
+                    raise SessionLimitExceeded(
+                        f"Maximum speakers per meeting ({settings.MAX_SPEAKERS_PER_MEETING}) exceeded",
+                        code=1008,
+                    )
                 self.speaker_map[speaker_id] = None
             return self.speaker_map[speaker_id]
 
         clean_name = str(speaker_name).strip()
         if self.speaker_map.get(speaker_id):
             return self.speaker_map[speaker_id]
+
+        if speaker_id not in self.speaker_map and len(self.speaker_map) >= settings.MAX_SPEAKERS_PER_MEETING:
+            raise SessionLimitExceeded(
+                f"Maximum speakers per meeting ({settings.MAX_SPEAKERS_PER_MEETING}) exceeded",
+                code=1008,
+            )
 
         existing_assigned = {v for v in self.speaker_map.values() if v is not None}
         if clean_name not in existing_assigned:
@@ -210,6 +228,21 @@ class LiveSession:
         """Process incoming 16 kHz mono PCM16 audio chunk with contiguity and 30s buffer bounds."""
         if self._is_finalized:
             return
+
+        # Check session duration limit
+        if (time.monotonic() - self.session_start_time) > settings.MAX_SESSION_LENGTH_SECONDS:
+            raise SessionLimitExceeded(
+                f"Maximum session length ({settings.MAX_SESSION_LENGTH_SECONDS} s) exceeded",
+                code=1008,
+            )
+
+        # Check total session audio bytes limit
+        if self.total_received_bytes + len(pcm_bytes) > settings.MAX_SESSION_BUFFERED_AUDIO_BYTES:
+            raise SessionLimitExceeded(
+                f"Maximum session audio limit ({settings.MAX_SESSION_BUFFERED_AUDIO_BYTES} bytes) exceeded",
+                code=1009,
+            )
+        self.total_received_bytes += len(pcm_bytes)
 
         self.register_speaker(speaker_id, speaker_name)
         buf = self.buffers.get(speaker_id)
@@ -307,6 +340,9 @@ class LiveSession:
 
     def on_connected(self) -> None:
         """Handle new connection or reconnection."""
+        self._is_finalized = False
+        live_session_manager.cancel_recovery_task(self.meeting_id)
+
         if self._idle_task is None or self._idle_task.done():
             self._start_idle_task()
 
@@ -336,11 +372,27 @@ class LiveSession:
         try:
             await asyncio.sleep(settings.BOT_DISCONNECT_TIMEOUT_SECONDS)
             logger.warning(
-                "Disconnect timeout expired (%d s) for meeting %s; finalizing.",
+                "Disconnect timeout expired (%d s) for meeting %s; checking segments.",
                 settings.BOT_DISCONNECT_TIMEOUT_SECONDS,
                 self.meeting_id,
             )
-            await self.finalize()
+            with get_db() as conn:
+                count = conn.execute(
+                    "SELECT COUNT(*) as c FROM transcript_segments WHERE meeting_id = ?",
+                    (self.meeting_id,),
+                ).fetchone()["c"]
+
+            if count > 0:
+                await self.finalize()
+            else:
+                self._is_finalized = True
+                if self._idle_task and not self._idle_task.done():
+                    self._idle_task.cancel()
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE meetings SET status = 'failed', error = ? WHERE id = ?",
+                        ("Live session ended before any speech was saved", self.meeting_id),
+                    )
         except asyncio.CancelledError:
             pass
 
@@ -445,10 +497,11 @@ class LiveSession:
 
 
 class LiveSessionManager:
-    """Thread-safe manager for active live meeting sessions."""
+    """Thread-safe manager for active live meeting sessions and startup recovery."""
 
     def __init__(self) -> None:
         self.sessions: dict[str, LiveSession] = {}
+        self.recovery_tasks: dict[str, asyncio.Task] = {}
 
     def get_or_create(self, meeting_id: str, language: str | None = None) -> LiveSession:
         session = self.sessions.get(meeting_id)
@@ -462,6 +515,77 @@ class LiveSessionManager:
 
     def remove(self, meeting_id: str) -> None:
         self.sessions.pop(meeting_id, None)
+
+    def cancel_recovery_task(self, meeting_id: str) -> None:
+        """Cancel a pending startup recovery task if the bot reconnects."""
+        task = self.recovery_tasks.pop(meeting_id, None)
+        if task and not task.done():
+            task.cancel()
+            logger.info("Cancelled startup recovery task for live meeting %s (bot reconnected).", meeting_id)
+
+    def start_recovery_tasks(self) -> None:
+        """On startup, find every source='join' meeting in 'processing' and start a background task.
+        Must NOT block startup.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT id, language FROM meetings WHERE status = 'processing' AND source = 'join'"
+            ).fetchall()
+
+        for r in rows:
+            mtg_id = r["id"]
+            lang = r["language"]
+            if mtg_id not in self.recovery_tasks:
+                task = loop.create_task(self._wait_recovery_timeout(mtg_id, lang))
+                self.recovery_tasks[mtg_id] = task
+                logger.info(
+                    "Started startup recovery task for live meeting %s (waiting %d s).",
+                    mtg_id,
+                    settings.BOT_DISCONNECT_TIMEOUT_SECONDS,
+                )
+
+    async def _wait_recovery_timeout(self, meeting_id: str, language: str | None) -> None:
+        try:
+            await asyncio.sleep(settings.BOT_DISCONNECT_TIMEOUT_SECONDS)
+            logger.warning(
+                "Startup recovery disconnect timeout expired (%d s) for live meeting %s.",
+                settings.BOT_DISCONNECT_TIMEOUT_SECONDS,
+                meeting_id,
+            )
+            with get_db() as conn:
+                row = conn.execute("SELECT status FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
+                if not row or row["status"] != "processing":
+                    return
+                count = conn.execute(
+                    "SELECT COUNT(*) as c FROM transcript_segments WHERE meeting_id = ?",
+                    (meeting_id,),
+                ).fetchone()["c"]
+
+            if count > 0:
+                session = self.get_or_create(meeting_id, language=language)
+                await session.finalize()
+            else:
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE meetings SET status = 'failed', error = ? WHERE id = ?",
+                        ("Live session ended before any speech was saved", meeting_id),
+                    )
+                logger.info("Marked abandoned live meeting %s as failed (no speech saved).", meeting_id)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.recovery_tasks.pop(meeting_id, None)
+
+    async def cancel_all_recovery_tasks(self) -> None:
+        for task in list(self.recovery_tasks.values()):
+            if not task.done():
+                task.cancel()
+        self.recovery_tasks.clear()
 
 
 live_session_manager = LiveSessionManager()

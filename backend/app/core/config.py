@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 2000
     BOT_INGEST_TOKEN: str = "change-me"
     BOT_DISCONNECT_TIMEOUT_SECONDS: int = 600
+    BOT_ALLOW_QUERY_TOKEN: bool = False
+    MAX_SPEAKERS_PER_MEETING: int = 50
+    MAX_SESSION_BUFFERED_AUDIO_BYTES: int = 200 * 1024 * 1024
+    MAX_SESSION_LENGTH_SECONDS: int = 8 * 3600
     NO_SPEECH_PROB_THRESHOLD: float = 0.6
     AVG_LOGPROB_THRESHOLD: float = -1.0
 

@@ -3,6 +3,7 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.database import init_db
+from app.services.live_stream import live_session_manager
 from app.services.worker import worker_manager
 
 
@@ -11,7 +12,9 @@ async def lifespan(app: FastAPI):
     # Initialize SQLite database and create tables on startup
     init_db()
     worker_manager.start()
+    live_session_manager.start_recovery_tasks()
     yield
+    await live_session_manager.cancel_all_recovery_tasks()
     await worker_manager.stop()
 
 
