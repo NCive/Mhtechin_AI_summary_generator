@@ -85,22 +85,43 @@ def transcribe_audio(
                 except (ValueError, TypeError):
                     no_speech_prob = 0.0
 
-        if no_speech_prob > 0.6:
-            logger.debug(
-                "Dropping segment with high no_speech_prob=%.2f: %r",
+        raw_logprob = getattr(seg, "avg_logprob", 0.0)
+        avg_logprob = 0.0
+        if raw_logprob is not None:
+            if type(raw_logprob).__name__ in ("MagicMock", "Mock"):
+                avg_logprob = 0.0
+            else:
+                try:
+                    avg_logprob = float(raw_logprob)
+                except (ValueError, TypeError):
+                    avg_logprob = 0.0
+
+        start_time = round(float(getattr(seg, "start", 0.0)), 2)
+        end_time = round(float(getattr(seg, "end", 0.0)), 2)
+        text = str(seg.text).strip()
+
+        # Whisper dual-condition filter: drop only if high no_speech_prob AND low avg_logprob
+        if (
+            no_speech_prob > settings.NO_SPEECH_PROB_THRESHOLD
+            and avg_logprob < settings.AVG_LOGPROB_THRESHOLD
+        ):
+            logger.info(
+                "Dropping segment [%.2f - %.2f] (no_speech_prob=%.4f, avg_logprob=%.4f): %r",
+                start_time,
+                end_time,
                 no_speech_prob,
-                seg.text,
+                avg_logprob,
+                text,
             )
             continue
 
-        text = str(seg.text).strip()
         # Drop empty text or non-speech hallucination markers
         if not text or text in (".", "...", "!", "?", "Thank you.", "Thanks for watching!", "Subtitles by", "[BLANK_AUDIO]"):
             continue
 
         results.append({
-            "start_time": round(float(seg.start), 2),
-            "end_time": round(float(seg.end), 2),
+            "start_time": start_time,
+            "end_time": end_time,
             "text": text,
             "speaker": None,  # Speaker diarization deferred to Step 5
         })

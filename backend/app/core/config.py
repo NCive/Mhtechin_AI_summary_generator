@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 2000
     BOT_INGEST_TOKEN: str = "change-me"
     BOT_DISCONNECT_TIMEOUT_SECONDS: int = 600
+    NO_SPEECH_PROB_THRESHOLD: float = 0.6
+    AVG_LOGPROB_THRESHOLD: float = -1.0
 
 
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000"]
