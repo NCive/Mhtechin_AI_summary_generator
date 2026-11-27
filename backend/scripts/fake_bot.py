@@ -1,118 +1,40 @@
 """Simulation script (fake_bot.py) for Step 5A live ingestion.
-Takes a meeting_id and two WAV files (or generates them with ffmpeg),
+Takes a meeting_id and two WAV files (or generates them with ffmpeg when --synthetic is used),
 streams them as two different speakers over WebSocket with realistic timing,
 then sends {"type":"end"}.
 """
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
-import socket
-import struct
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+
+from websockets.exceptions import ConnectionClosed
+from websockets.sync.client import connect
 
 # Add parent directory to path so modules can be imported if needed
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-class SimpleWebSocketClient:
-    """Minimal RFC-6455 compliant WebSocket client using standard library sockets."""
+def convert_to_pcm(wav_path: str | Path) -> bytes:
+    """Convert an audio file to 16 kHz mono 16-bit PCM using FFmpeg.
 
-    def __init__(self, url: str) -> None:
-        self.url = url
-        parsed = urlparse(url)
-        self.host = parsed.hostname or "127.0.0.1"
-        self.port = parsed.port or (443 if parsed.scheme == "wss" else 80)
-        self.resource = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
-        self.sock: socket.socket | None = None
+    Exits with error if file does not exist, ffmpeg fails, or output < 1s.
+    """
+    path = Path(wav_path)
+    if not path.is_file():
+        print(f"Error: Input audio file does not exist: {wav_path}", file=sys.stderr)
+        sys.exit(1)
 
-    def connect(self) -> None:
-        self.sock = socket.create_connection((self.host, self.port), timeout=10)
-        sec_key = base64.b64encode(os.urandom(16)).decode("ascii")
-
-        req = (
-            f"GET {self.resource} HTTP/1.1\r\n"
-            f"Host: {self.host}:{self.port}\r\n"
-            f"Upgrade: websocket\r\n"
-            f"Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Key: {sec_key}\r\n"
-            f"Sec-WebSocket-Version: 13\r\n"
-            f"\r\n"
-        )
-        self.sock.sendall(req.encode("ascii"))
-
-        # Read response headers
-        response = b""
-        while b"\r\n\r\n" not in response:
-            chunk = self.sock.recv(4096)
-            if not chunk:
-                break
-            response += chunk
-
-        status_line = response.split(b"\r\n")[0].decode("latin-1", errors="replace")
-        if not status_line.startswith("HTTP/1.1 101"):
-            raise ConnectionError(f"WebSocket handshake failed: {status_line}")
-
-    def _send_frame(self, opcode: int, payload: bytes) -> None:
-        if not self.sock:
-            raise ConnectionError("Socket is not connected")
-
-        length = len(payload)
-        mask_key = os.urandom(4)
-
-        header = bytearray()
-        # Fin bit = 1, RSV = 0, Opcode
-        header.append(0x80 | opcode)
-
-        # Mask bit = 1 (client frames MUST be masked)
-        if length <= 125:
-            header.append(0x80 | length)
-        elif length <= 65535:
-            header.append(0x80 | 126)
-            header.extend(struct.pack("!H", length))
-        else:
-            header.append(0x80 | 127)
-            header.extend(struct.pack("!Q", length))
-
-        header.extend(mask_key)
-
-        # Mask payload
-        masked = bytearray(length)
-        for i in range(length):
-            masked[i] = payload[i] ^ mask_key[i % 4]
-
-        self.sock.sendall(header + masked)
-
-    def send_text(self, text: str) -> None:
-        self._send_frame(opcode=0x1, payload=text.encode("utf-8"))
-
-    def send_bytes(self, data: bytes) -> None:
-        self._send_frame(opcode=0x2, payload=data)
-
-    def close(self) -> None:
-        if self.sock:
-            try:
-                # Send close frame
-                self._send_frame(opcode=0x8, payload=b"")
-                self.sock.close()
-            except Exception:  # noqa: BLE001, S110
-                pass
-            finally:
-                self.sock = None
-
-
-def convert_or_generate_pcm(wav_path: str | None, default_freq: int = 440, duration_s: int = 4) -> bytes:
-    """Convert an audio file to 16 kHz mono 16-bit PCM using FFmpeg, or generate a tone if no file provided."""
     ffmpeg_cmd = "ffmpeg"
     try:
         from app.core.config import settings
+
         ffmpeg_cmd = settings.FFMPEG_PATH
     except Exception:  # noqa: BLE001, S110
         pass
@@ -121,27 +43,181 @@ def convert_or_generate_pcm(wav_path: str | None, default_freq: int = 440, durat
         out_path = raw_out.name
 
     try:
-        if wav_path and Path(wav_path).is_file():
-            cmd = [
-                ffmpeg_cmd, "-y", "-i", str(wav_path),
-                "-f", "s16le", "-acodec", "pcm_s16le",
-                "-ar", "16000", "-ac", "1", out_path,
-            ]
-        else:
-            # Generate synthetic tone
-            cmd = [
-                ffmpeg_cmd, "-y", "-f", "lavfi",
-                "-i", f"sine=frequency={default_freq}:duration={duration_s}",
-                "-f", "s16le", "-acodec", "pcm_s16le",
-                "-ar", "16000", "-ac", "1", out_path,
-            ]
+        cmd = [
+            ffmpeg_cmd,
+            "-y",
+            "-i",
+            str(path),
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            out_path,
+        ]
         proc = subprocess.run(cmd, capture_output=True, check=False)
         if proc.returncode != 0:
-            raise RuntimeError(f"FFmpeg audio extraction failed: {proc.stderr.decode('utf-8', errors='replace')}")
+            err = proc.stderr.decode("utf-8", errors="replace").strip()
+            print(f"Error: FFmpeg audio conversion failed for '{wav_path}': {err}", file=sys.stderr)
+            sys.exit(1)
 
-        return Path(out_path).read_bytes()
+        pcm = Path(out_path).read_bytes()
+        if len(pcm) < 32000:
+            dur = len(pcm) / 32000.0
+            print(
+                f"Error: Converted audio from '{wav_path}' is empty or shorter than 1 second ({dur:.2f} s).",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return pcm
     finally:
         Path(out_path).unlink(missing_ok=True)
+
+
+def generate_synthetic_pcm(default_freq: int = 440, duration_s: int = 4) -> bytes:
+    """Generate synthetic sine tone PCM (16 kHz mono 16-bit) using FFmpeg lavfi."""
+    ffmpeg_cmd = "ffmpeg"
+    try:
+        from app.core.config import settings
+
+        ffmpeg_cmd = settings.FFMPEG_PATH
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+    with tempfile.NamedTemporaryFile(suffix=".raw", delete=False) as raw_out:
+        out_path = raw_out.name
+
+    try:
+        cmd = [
+            ffmpeg_cmd,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency={default_freq}:duration={duration_s}",
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            out_path,
+        ]
+        proc = subprocess.run(cmd, capture_output=True, check=False)
+        if proc.returncode != 0:
+            err = proc.stderr.decode("utf-8", errors="replace").strip()
+            print(f"Error: FFmpeg synthetic audio generation failed: {err}", file=sys.stderr)
+            sys.exit(1)
+
+        pcm = Path(out_path).read_bytes()
+        if len(pcm) < 32000:
+            print("Error: Generated synthetic audio is shorter than 1 second.", file=sys.stderr)
+            sys.exit(1)
+        return pcm
+    finally:
+        Path(out_path).unlink(missing_ok=True)
+
+
+def convert_or_generate_pcm(
+    wav_path: str | Path | None,
+    default_freq: int = 440,
+    duration_s: int = 4,
+    synthetic: bool = False,
+) -> bytes:
+    """Load audio or generate synthetic if explicitly requested."""
+    if synthetic:
+        if wav_path and Path(wav_path).is_file():
+            return convert_to_pcm(wav_path)
+        return generate_synthetic_pcm(default_freq=default_freq, duration_s=duration_s)
+
+    if not wav_path:
+        print("Error: Audio file path is required. Use --synthetic for synthetic audio.", file=sys.stderr)
+        sys.exit(1)
+    return convert_to_pcm(wav_path)
+
+
+def stream_audio(ws, pcm1: bytes, pcm2: bytes, args: argparse.Namespace) -> None:
+    """Stream audio chunks over the connected WebSocket."""
+    bytes_per_chunk = int(16000 * 2 * (args.chunk_ms / 1000.0))
+    if bytes_per_chunk <= 0:
+        bytes_per_chunk = 32000
+
+    chunks1 = [pcm1[i : i + bytes_per_chunk] for i in range(0, len(pcm1), bytes_per_chunk)]
+    chunks2 = [pcm2[i : i + bytes_per_chunk] for i in range(0, len(pcm2), bytes_per_chunk)]
+
+    if args.sequential:
+        # Sequential mode: Speaker 1 then Speaker 2
+        print(f"Streaming audio sequentially for speaker 1 ({args.name1})...")
+        current_ms = 0
+        for chunk in chunks1:
+            meta = {
+                "type": "chunk",
+                "speaker_id": "bot_speaker_1",
+                "speaker_name": args.name1,
+                "start_ms": current_ms,
+            }
+            ws.send(json.dumps(meta))
+            ws.send(chunk)
+            current_ms += int(len(chunk) / 32)
+            if not args.fast:
+                time.sleep(args.chunk_ms / 1000.0)
+
+        current_ms += 500
+
+        print(f"Streaming audio sequentially for speaker 2 ({args.name2})...")
+        for chunk in chunks2:
+            meta = {
+                "type": "chunk",
+                "speaker_id": "bot_speaker_2",
+                "speaker_name": args.name2,
+                "start_ms": current_ms,
+            }
+            ws.send(json.dumps(meta))
+            ws.send(chunk)
+            current_ms += int(len(chunk) / 32)
+            if not args.fast:
+                time.sleep(args.chunk_ms / 1000.0)
+    else:
+        # Interleaved mode: concurrent streaming
+        print(f"Streaming interleaved audio for {args.name1} and {args.name2}...")
+        total_steps = max(len(chunks1), len(chunks2))
+        for step in range(total_steps):
+            start_ms = step * args.chunk_ms
+
+            if step < len(chunks1):
+                chunk1 = chunks1[step]
+                meta1 = {
+                    "type": "chunk",
+                    "speaker_id": "bot_speaker_1",
+                    "speaker_name": args.name1,
+                    "start_ms": start_ms,
+                }
+                ws.send(json.dumps(meta1))
+                ws.send(chunk1)
+
+            if step < len(chunks2):
+                chunk2 = chunks2[step]
+                meta2 = {
+                    "type": "chunk",
+                    "speaker_id": "bot_speaker_2",
+                    "speaker_name": args.name2,
+                    "start_ms": start_ms,
+                }
+                ws.send(json.dumps(meta2))
+                ws.send(chunk2)
+
+            if not args.fast:
+                time.sleep(args.chunk_ms / 1000.0)
+
+    # End stream
+    print("Sending end of meeting frame...")
+    ws.send(json.dumps({"type": "end"}))
+    print("Live streaming completed successfully.")
 
 
 def main() -> None:
@@ -153,6 +229,16 @@ def main() -> None:
     parser.add_argument("--wav2", help="Path to WAV audio file for speaker 2")
     parser.add_argument("--speaker2", "--name2", dest="name2", default="Bob", help="Display name for speaker 2")
     parser.add_argument("--silent2", action="store_true", help="Send digital silence for speaker 2")
+    parser.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="Generate synthetic tone audio instead of requiring input audio files",
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Stream speakers sequentially instead of interleaved concurrently",
+    )
     parser.add_argument("--url", default="ws://127.0.0.1:8000", help="Base WebSocket URL or endpoint")
     parser.add_argument("--token", default=None, help="Shared bot ingest secret token (or set BOT_INGEST_TOKEN env)")
     parser.add_argument("--chunk-ms", type=int, default=1000, help="Chunk duration in ms (default 1000 ms)")
@@ -161,79 +247,78 @@ def main() -> None:
     args = parser.parse_args()
     meeting_id = args.meeting_id or args.opt_meeting_id
     if not meeting_id:
-        print("Error: meeting_id is required.")
+        print("Error: meeting_id is required.", file=sys.stderr)
         sys.exit(1)
 
     token = (args.token or os.environ.get("BOT_INGEST_TOKEN", "")).strip()
     if not token or token == "change-me":
-        print("Error: BOT_INGEST_TOKEN is not set. Please set the BOT_INGEST_TOKEN environment variable or pass --token <token>.")
+        print(
+            "Error: BOT_INGEST_TOKEN is not set. Please set the BOT_INGEST_TOKEN environment variable or pass --token <token>.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    # Prepare stream URL
+    # 1. Prepare audio streams
+    if args.synthetic:
+        pcm1 = convert_or_generate_pcm(args.wav1, default_freq=440, duration_s=4, synthetic=True)
+        if args.silent2:
+            pcm2 = b"\x00" * len(pcm1)
+        else:
+            pcm2 = convert_or_generate_pcm(args.wav2, default_freq=880, duration_s=4, synthetic=True)
+    else:
+        if not args.wav1:
+            print("Error: --wav1 audio file is required (or pass --synthetic).", file=sys.stderr)
+            sys.exit(1)
+        pcm1 = convert_to_pcm(args.wav1)
+
+        if args.silent2:
+            pcm2 = b"\x00" * len(pcm1)
+        else:
+            if not args.wav2:
+                print("Error: --wav2 audio file is required (or pass --synthetic or --silent2).", file=sys.stderr)
+                sys.exit(1)
+            pcm2 = convert_to_pcm(args.wav2)
+
+    # Print real stream durations before sending
+    dur1 = len(pcm1) / 32000.0
+    dur2 = len(pcm2) / 32000.0
+    print(f"Speaker 1 ({args.name1}) stream duration: {dur1:.2f} s")
+    print(f"Speaker 2 ({args.name2}) stream duration: {dur2:.2f} s")
+
+    # 2. Prepare WebSocket URL
     base_url = args.url.rstrip("/")
+    if base_url.startswith("http://"):
+        base_url = "ws://" + base_url[7:]
+    elif base_url.startswith("https://"):
+        base_url = "wss://" + base_url[8:]
+
     if "/stream" in base_url:
-        stream_url = f"{base_url}?token={token}"
+        stream_url = base_url
     else:
-        stream_url = f"{base_url}/api/v1/meetings/{meeting_id}/stream?token={token}"
+        stream_url = f"{base_url}/api/v1/meetings/{meeting_id}/stream"
 
-    print(f"Connecting to {stream_url}...")
-    client = SimpleWebSocketClient(stream_url)
-    client.connect()
-    print("Connected successfully!")
+    # Only print meeting ID and "Connecting..." (NEVER print token or URL containing it)
+    print(f"Meeting ID: {meeting_id}")
+    print("Connecting...")
 
-    print("Preparing audio streams...")
-    pcm1 = convert_or_generate_pcm(args.wav1, default_freq=440, duration_s=4)
-    if args.silent2:
-        print(f"Generating digital silence for speaker 2 ({args.name2})...")
-        pcm2 = b"\x00\x00" * (16000 * 4)
-    else:
-        pcm2 = convert_or_generate_pcm(args.wav2, default_freq=880, duration_s=4)
-
-    bytes_per_chunk = int(16000 * 2 * (args.chunk_ms / 1000.0))  # 32 bytes per ms
-    current_ms = 0
+    headers = {"x-bot-token": token}
 
     try:
-        # Stream Speaker 1
-        print(f"Streaming audio for speaker 1 ({args.name1})...")
-        for offset in range(0, len(pcm1), bytes_per_chunk):
-            chunk = pcm1[offset : offset + bytes_per_chunk]
-            meta = {
-                "type": "chunk",
-                "speaker_id": "bot_speaker_1",
-                "speaker_name": args.name1,
-                "start_ms": current_ms,
-            }
-            client.send_text(json.dumps(meta))
-            client.send_bytes(chunk)
-            current_ms += int(len(chunk) / 32)
-            if not args.fast:
-                time.sleep(args.chunk_ms / 1000.0)
-
-        # Brief gap
-        current_ms += 500
-
-        # Stream Speaker 2
-        print(f"Streaming audio for speaker 2 ({args.name2})...")
-        for offset in range(0, len(pcm2), bytes_per_chunk):
-            chunk = pcm2[offset : offset + bytes_per_chunk]
-            meta = {
-                "type": "chunk",
-                "speaker_id": "bot_speaker_2",
-                "speaker_name": args.name2,
-                "start_ms": current_ms,
-            }
-            client.send_text(json.dumps(meta))
-            client.send_bytes(chunk)
-            current_ms += int(len(chunk) / 32)
-            if not args.fast:
-                time.sleep(args.chunk_ms / 1000.0)
-
-        # End stream
-        print("Sending end of meeting frame...")
-        client.send_text(json.dumps({"type": "end"}))
-        print("Live streaming completed successfully.")
-    finally:
-        client.close()
+        with connect(stream_url, additional_headers=headers) as ws:
+            print("Connected successfully!")
+            stream_audio(ws, pcm1, pcm2, args)
+    except ConnectionClosed as exc:
+        code = exc.rcvd.code if getattr(exc, "rcvd", None) else getattr(exc, "code", "unknown")
+        reason = exc.rcvd.reason if getattr(exc, "rcvd", None) else getattr(exc, "reason", "")
+        print(f"Connection closed by server: code={code}, reason={reason}")
+        sys.exit(1)
+    except Exception as exc:  # noqa: BLE001
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if status_code:
+            print(f"Connection rejected by server: status_code={status_code}")
+        else:
+            print(f"Connection error: {exc}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
