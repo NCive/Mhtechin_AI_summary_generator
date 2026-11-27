@@ -221,6 +221,22 @@ def process_transcript_windows(
 
     for win in windows:
         idx = win["window_index"]
+
+        # Resume support: skip LLM extraction if window is already saved in DB
+        existing = conn.execute(
+            "SELECT result_json FROM windows WHERE meeting_id = ? AND window_index = ?",
+            (meeting_id, idx),
+        ).fetchone()
+        if existing and existing["result_json"]:
+            try:
+                saved = json.loads(existing["result_json"])
+                if isinstance(saved, dict) and not str(saved.get("summary", "")).startswith("[Extraction failed"):
+                    logger.info("Window %d already processed for meeting %s; skipping LLM extraction.", idx, meeting_id)
+                    results.append(saved)
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+
         logger.info(
             "Processing window %d/%d for meeting %s (%.1f–%.1f s)",
             idx + 1, len(windows), meeting_id, win["start_time"], win["end_time"],

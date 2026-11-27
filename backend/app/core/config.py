@@ -1,6 +1,7 @@
 from typing import List, Union
 from pydantic import field_validator
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,8 @@ class Settings(BaseSettings):
     WORKER_POLL_INTERVAL: float = 2.0
     ENABLE_BACKGROUND_WORKER: bool = True
     MAX_UPLOAD_MB: int = 2000
+    BOT_INGEST_TOKEN: str = "change-me"
+    BOT_DISCONNECT_TIMEOUT_SECONDS: int = 600
 
 
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:3000"]
@@ -39,7 +42,7 @@ class Settings(BaseSettings):
         return ["http://localhost:3000"]
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

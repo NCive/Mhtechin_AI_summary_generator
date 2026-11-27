@@ -1,4 +1,5 @@
 from typing import Any
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -79,6 +80,9 @@ class TranscriptUtterance(BaseModel):
     speakerName: str
     speakerColor: str | None = None
     text: str
+    startTime: float | None = None
+    endTime: float | None = None
+    speaker: str | None = None
 
 
 class MeetingSummaryResponse(BaseModel):

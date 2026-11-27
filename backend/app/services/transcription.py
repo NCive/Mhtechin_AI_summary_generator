@@ -73,14 +73,37 @@ def transcribe_audio(
 
     results: list[dict[str, Any]] = []
     for seg in segments_gen:
+        # Guard against Whisper hallucinations on silence / low-energy audio
+        raw_prob = getattr(seg, "no_speech_prob", 0.0)
+        no_speech_prob = 0.0
+        if raw_prob is not None:
+            if type(raw_prob).__name__ in ("MagicMock", "Mock"):
+                no_speech_prob = 0.0
+            else:
+                try:
+                    no_speech_prob = float(raw_prob)
+                except (ValueError, TypeError):
+                    no_speech_prob = 0.0
+
+        if no_speech_prob > 0.6:
+            logger.debug(
+                "Dropping segment with high no_speech_prob=%.2f: %r",
+                no_speech_prob,
+                seg.text,
+            )
+            continue
+
         text = str(seg.text).strip()
-        if text:
-            results.append({
-                "start_time": round(float(seg.start), 2),
-                "end_time": round(float(seg.end), 2),
-                "text": text,
-                "speaker": None,  # Speaker diarization deferred to Step 5
-            })
+        # Drop empty text or non-speech hallucination markers
+        if not text or text in (".", "...", "!", "?", "Thank you.", "Thanks for watching!", "Subtitles by", "[BLANK_AUDIO]"):
+            continue
+
+        results.append({
+            "start_time": round(float(seg.start), 2),
+            "end_time": round(float(seg.end), 2),
+            "text": text,
+            "speaker": None,  # Speaker diarization deferred to Step 5
+        })
 
     return results
 

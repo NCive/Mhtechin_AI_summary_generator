@@ -69,16 +69,22 @@ def map_transcript_rows(
             name = str(stored_speaker).strip()
             color = colors.get(name.lower())
         else:
-            name = "Unknown speaker"
+            name = "Speaker"
             color = None
+
+        start = float(r.get("start_time", 0.0)) if r.get("start_time") is not None else None
+        end = float(r.get("end_time", 0.0)) if r.get("end_time") is not None else None
 
         result.append({
             "id": str(r.get("id")),
-            "timestampStart": float(r.get("start_time", 0.0)) if r.get("start_time") is not None else None,
-            "timestampEnd": float(r.get("end_time", 0.0)) if r.get("end_time") is not None else None,
+            "timestampStart": start,
+            "timestampEnd": end,
             "speakerName": name,
             "speakerColor": color,
             "text": str(r.get("text", "")),
+            "startTime": start,
+            "endTime": end,
+            "speaker": name,
         })
     return result
 

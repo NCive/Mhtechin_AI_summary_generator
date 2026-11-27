@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.core.locks import HEAVY_JOB_LOCK
 from app.db.database import get_db
 from app.services.llm import LLMUnavailable, is_server_ready
 from app.services.pipeline import process_meeting_pipeline
@@ -84,7 +85,9 @@ async def worker_loop() -> None:
                 logger.info("Processing meeting %s in threadpool...", meeting_id)
                 try:
                     # Offload CPU/IO intensive operations outside the API event loop
-                    await asyncio.to_thread(process_meeting_pipeline, meeting_id)
+                    # Protect against memory exhaustion with shared heavy job lock
+                    async with HEAVY_JOB_LOCK:
+                        await asyncio.to_thread(process_meeting_pipeline, meeting_id)
                 except LLMUnavailable as exc:
                     logger.warning(
                         "Meeting %s deferred back to pending (LLM unavailable: %s)",

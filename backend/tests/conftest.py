@@ -1,6 +1,12 @@
+import os
 from pathlib import Path
 
 import pytest
+
+# Ensure tests run with explicit isolated settings independent of backend/.env
+os.environ["BOT_INGEST_TOKEN"] = "test-bot-token"
+os.environ["BOT_DISCONNECT_TIMEOUT_SECONDS"] = "600"
+os.environ["ENABLE_BACKGROUND_WORKER"] = "False"
 
 from app.core.config import settings
 from app.db.database import init_db
@@ -25,6 +31,8 @@ def isolate_test_environment(tmp_path_factory):
     settings.DB_PATH = str(temp_db)
     settings.MEDIA_DIR = str(temp_media)
     settings.ENABLE_BACKGROUND_WORKER = False
+    settings.BOT_INGEST_TOKEN = "test-bot-token"
+    settings.BOT_DISCONNECT_TIMEOUT_SECONDS = 600
 
     init_db()
 

@@ -125,7 +125,7 @@ class TestAudioExtraction:
         assert outside_file.exists()
         assert not outside_file.resolve().is_relative_to(Path(settings.MEDIA_DIR).resolve())
 
-        with pytest.raises(ValueError, match="outside MEDIA_DIR"):
+        with pytest.raises(PermissionError, match="outside MEDIA_DIR"):
             extract_audio_to_wav(outside_file)
 
     def test_extract_temporary_wav_cleans_up_on_success_and_error(self, tmp_path):
@@ -315,6 +315,46 @@ class TestPipeline:
             row = conn.execute("SELECT status, overview FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
             assert row["status"] == "done"
             assert "[No speech detected" in row["overview"]
+
+        from app.main import app
+        from fastapi.testclient import TestClient
+        api_client = TestClient(app)
+        res = api_client.get(f"/api/v1/meetings/{meeting_id}")
+        assert res.status_code == 200
+        assert res.json()["status"] == "completed"
+
+    def test_map_transcript_rows_fields(self):
+        from app.services.mappers import map_transcript_rows
+        rows = [
+            {"id": 1, "start_time": 12.5, "end_time": 18.0, "speaker": "Alice", "text": "Hello world"},
+            {"id": 2, "start_time": 19.0, "end_time": 24.5, "speaker": None, "text": "No speaker given"},
+            {"id": 3, "start_time": 25.0, "end_time": 30.0, "speaker": "", "text": "Empty speaker string"},
+        ]
+        colors = {"alice": "#ff0000"}
+        result = map_transcript_rows(rows, colors)
+        assert len(result) == 3
+
+        # Row 1: Alice with color
+        assert result[0]["id"] == "1"
+        assert result[0]["timestampStart"] == 12.5
+        assert result[0]["timestampEnd"] == 18.0
+        assert result[0]["speakerName"] == "Alice"
+        assert result[0]["speakerColor"] == "#ff0000"
+        assert result[0]["text"] == "Hello world"
+        # Old fields preserved
+        assert result[0]["startTime"] == 12.5
+        assert result[0]["endTime"] == 18.0
+        assert result[0]["speaker"] == "Alice"
+
+        # Row 2: None speaker defaults to "Speaker"
+        assert result[1]["speakerName"] == "Speaker"
+        assert result[1]["speakerColor"] is None
+        assert result[1]["speaker"] == "Speaker"
+
+        # Row 3: Empty string speaker defaults to "Speaker"
+        assert result[2]["speakerName"] == "Speaker"
+        assert result[2]["speakerColor"] is None
+        assert result[2]["speaker"] == "Speaker"
 
     def test_process_meeting_pipeline_failed_window_raises(self, tmp_path):
         meeting_id = "mtg-pipe-fail-window"

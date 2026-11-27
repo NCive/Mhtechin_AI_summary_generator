@@ -194,25 +194,32 @@ class TestProcessTranscriptWindows:
         assert stored["summary"] == MOCK_NOTES["summary"]
         conn.close()
 
-    def test_upserts_on_retry(self, tmp_path):
-        """Calling twice should update the existing window row, not duplicate it."""
+    def test_resume_skips_llm_extraction_for_saved_window(self, tmp_path):
+        """Resume support: windows already saved in DB should skip LLM extraction."""
         from app.services.windowing import process_transcript_windows
         _, conn = _make_temp_db(tmp_path)
         _insert_meeting(conn, "mtg-003")
 
-        with patch("app.services.windowing.count_tokens", return_value=5), \
-             patch("app.services.windowing.extract_chunk_notes", return_value=MOCK_NOTES):
-            process_transcript_windows("mtg-003", SAMPLE_SEGMENTS, conn, token_budget=500)
+        with (
+            patch("app.services.windowing.count_tokens", return_value=5),
+            patch("app.services.windowing.extract_chunk_notes", return_value=MOCK_NOTES) as mock_extract,
+        ):
+            res1 = process_transcript_windows("mtg-003", SAMPLE_SEGMENTS, conn, token_budget=500)
+            assert mock_extract.call_count == 1
 
-        updated_notes = dict(MOCK_NOTES, summary="Updated summary")
-        with patch("app.services.windowing.count_tokens", return_value=5), \
-             patch("app.services.windowing.extract_chunk_notes", return_value=updated_notes):
-            process_transcript_windows("mtg-003", SAMPLE_SEGMENTS, conn, token_budget=500)
+        # Second call with existing window: extract_chunk_notes must be skipped
+        with (
+            patch("app.services.windowing.count_tokens", return_value=5),
+            patch("app.services.windowing.extract_chunk_notes") as mock_extract2,
+        ):
+            res2 = process_transcript_windows("mtg-003", SAMPLE_SEGMENTS, conn, token_budget=500)
+            assert mock_extract2.call_count == 0
+            assert res2 == res1
 
         rows = conn.execute("SELECT * FROM windows WHERE meeting_id='mtg-003'").fetchall()
         assert len(rows) == 1
         stored = json.loads(rows[0]["result_json"])
-        assert stored["summary"] == "Updated summary"
+        assert stored["summary"] == MOCK_NOTES["summary"]
         conn.close()
 
     def test_llm_unavailable_raises(self, tmp_path):
@@ -509,6 +516,37 @@ class TestMergeAndPersist:
         assert ai2["deadline"] == "by Friday"
         assert ai2["source_time"] == "[01:30]"
 
+        conn.close()
+
+    def test_merge_two_windows_keeps_owner_and_deadline(self, tmp_path):
+        from app.services.summarizer import merge_and_persist
+        _, conn = _make_temp_db(tmp_path)
+        _insert_meeting(conn, "mtg-merge-test")
+        win1 = {
+            "summary": "First window summary.",
+            "project_progress": ["Task A started"],
+            "challenges": [],
+            "action_items": [
+                {"text": "Implement feature X", "owner": "Alice", "deadline": "tomorrow", "source_time": "[01:00]"}
+            ],
+            "next_steps": [],
+        }
+        win2 = {
+            "summary": "Second window summary.",
+            "project_progress": [],
+            "challenges": ["Blocker Y"],
+            "action_items": [
+                {"text": "Review pull request", "owner": "Bob", "deadline": "by Friday", "source_time": "[02:30]"}
+            ],
+            "next_steps": ["Deploy to staging"],
+        }
+        res = merge_and_persist("mtg-merge-test", [win1, win2], conn)
+        conn.commit()
+        assert len(res["action_items"]) == 2
+        assert res["action_items"][0]["owner"] == "Alice"
+        assert res["action_items"][0]["deadline"] == "tomorrow"
+        assert res["action_items"][1]["owner"] == "Bob"
+        assert res["action_items"][1]["deadline"] == "by Friday"
         conn.close()
 
 

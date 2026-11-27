@@ -1,6 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile
+import logging
+
+logger = logging.getLogger(__name__)
+from fastapi import APIRouter, Depends, HTTPException, status, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 
 from typing import List, Optional
+
+from app.core.config import settings
+from app.db.database import get_db
+from app.services.live_stream import live_session_manager
 
 from app.schemas.meeting import (
     ActionItemResponse,
@@ -92,3 +99,77 @@ def api_get_media(meeting_id: str):
         filename=path.name,
         content_disposition_type="inline",
     )
+
+
+@router.websocket("/{meeting_id}/stream")
+async def api_meeting_stream(websocket: WebSocket, meeting_id: str):
+    # 1. Require shared secret BOT_INGEST_TOKEN via query param or header
+    token = websocket.query_params.get("token")
+    if not token:
+        token = websocket.headers.get("x-bot-token")
+    if not token:
+        auth_header = websocket.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+        elif auth_header:
+            token = auth_header.strip()
+
+    server_token = settings.BOT_INGEST_TOKEN.strip() if settings.BOT_INGEST_TOKEN else ""
+    if not server_token or server_token == "change-me" or not token or token != server_token:
+        await websocket.close(code=1008)
+        return
+
+    # 2. Only accept meetings with source='join'
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, source, status, language FROM meetings WHERE id = ?",
+            (meeting_id,),
+        ).fetchone()
+
+    if not row or row["source"] != "join":
+        await websocket.close(code=1008)
+        return
+
+    # 3. Accept connection and mark status='processing'
+    await websocket.accept()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE meetings SET status = 'processing', error = NULL WHERE id = ?",
+            (meeting_id,),
+        )
+
+    session = live_session_manager.get_or_create(meeting_id, language=row["language"])
+    session.on_connected()
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+
+            if msg_type == "chunk":
+                speaker_id = data.get("speaker_id")
+                speaker_name = data.get("speaker_name")
+                start_ms = int(data.get("start_ms", 0))
+
+                # Expected binary PCM16 frame follows
+                pcm_bytes = await websocket.receive_bytes()
+                await session.handle_audio_chunk(
+                    speaker_id=str(speaker_id) if speaker_id is not None else "unknown",
+                    speaker_name=speaker_name,
+                    start_ms=start_ms,
+                    pcm_bytes=pcm_bytes,
+                )
+            elif msg_type == "end":
+                try:
+                    await session.finalize()
+                finally:
+                    await websocket.close(code=1000)
+                break
+            else:
+                logger.warning("Unknown message type on live stream for meeting %s: %s", meeting_id, msg_type)
+    except WebSocketDisconnect:
+        session.on_disconnected()
+    except Exception:
+        logger.exception("Exception in WebSocket stream for meeting %s", meeting_id)
+        session.on_disconnected()
+

@@ -658,21 +658,21 @@ def test_meeting_detail_contract_and_null_speaker():
         # 2. Transcript rows check
         assert len(data["transcript"]) == 3
         expected_transcript_keys = {
-            "id", "timestampStart", "timestampEnd", "speakerName", "speakerColor", "text"
+            "id", "timestampStart", "timestampEnd", "speakerName", "speakerColor", "text",
+            "startTime", "endTime", "speaker"
         }
         for ut in data["transcript"]:
             assert set(ut.keys()) == expected_transcript_keys
-            # No legacy keys allowed
-            assert "startTime" not in ut
-            assert "endTime" not in ut
-            assert "speaker" not in ut
 
-        # Row 1: Null speaker -> "Unknown speaker" and null color
+        # Row 1: Null speaker -> defaults to "Speaker" and null color
         ut1 = data["transcript"][0]
-        assert ut1["speakerName"] == "Unknown speaker"
+        assert ut1["speakerName"] == "Speaker"
         assert ut1["speakerColor"] is None
+        assert ut1["speaker"] == "Speaker"
         assert ut1["timestampStart"] == 0.0
         assert ut1["timestampEnd"] == 5.0
+        assert ut1["startTime"] == 0.0
+        assert ut1["endTime"] == 5.0
 
         # Row 2: Bob -> "Bob" and "#5932ea"
         ut2 = data["transcript"][1]

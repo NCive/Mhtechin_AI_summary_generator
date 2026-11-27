@@ -27,7 +27,22 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({ meeting, onBack })
   const title = meeting?.title || 'Meeting Details';
   const folder = meeting?.folder;
   const date = meeting?.date;
-  const timeRange = meeting?.timeRange || (meeting?.durationSeconds ? `${Math.round(meeting.durationSeconds / 60)} mins` : undefined);
+
+  const getDurationText = (): string | undefined => {
+    if (meeting?.durationSeconds != null && meeting.durationSeconds > 0) {
+      if (meeting.durationSeconds < 60) {
+        return '<1 min';
+      }
+      const mins = Math.round(meeting.durationSeconds / 60);
+      return mins <= 1 ? '1 min' : `${mins} mins`;
+    }
+    if (meeting?.timeRange && meeting.timeRange.trim() && meeting.timeRange !== '0 mins') {
+      return meeting.timeRange;
+    }
+    return undefined;
+  };
+
+  const durationText = getDurationText();
 
   const handleShare = async () => {
     const success = await share({
@@ -79,10 +94,10 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({ meeting, onBack })
                 <span>{date}</span>
               </div>
             )}
-            {timeRange && (
+            {durationText && (
               <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-gray-400" />
-                <span>{timeRange}</span>
+                <span>{durationText}</span>
               </div>
             )}
             <Users className="w-3.5 h-3.5 text-purple-600 font-bold" />

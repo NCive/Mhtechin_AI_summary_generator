@@ -65,7 +65,8 @@ def extract_audio_to_wav(
     Preserves original media file. Does not load media into RAM.
 
     Raises:
-        ValueError: If media_path does not exist or escapes MEDIA_DIR.
+        PermissionError: If media_path escapes MEDIA_DIR.
+        ValueError: If media_path is not a valid file.
         FileNotFoundError: If ffmpeg binary is not found.
         RuntimeError: If ffmpeg conversion fails.
     """
@@ -73,7 +74,7 @@ def extract_audio_to_wav(
     resolved_input = media_path.resolve()
 
     if not resolved_input.is_relative_to(media_root):
-        raise ValueError(f"Media file '{media_path}' is outside MEDIA_DIR.")
+        raise PermissionError(f"Media file '{media_path}' is outside MEDIA_DIR.")
 
     if not resolved_input.is_file():
         raise ValueError(f"Media path '{media_path}' is not a valid file.")

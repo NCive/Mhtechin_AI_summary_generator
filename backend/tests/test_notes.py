@@ -4,7 +4,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from app.core.config import settings
 from app.services.llm import (
     LLMUnavailable,
@@ -263,6 +262,7 @@ def test_verify_notes_unknown_speaker_commitment_gives_null():
     chunk_text = (
         "[00:10] Unknown Speaker: I will deploy the build tomorrow morning.\n"
         "[00:20] Bob: I can take that bug fix on today.\n"
+        "[00:30] Unknown: I will prepare the release notes by noon.\n"
     )
     raw_notes = {
         "summary": "Meeting notes",
@@ -281,12 +281,18 @@ def test_verify_notes_unknown_speaker_commitment_gives_null():
                 "deadline": "today",
                 "source_time": "[00:20]",
             },
+            {
+                "text": "Prepare release notes",
+                "owner": "Unknown",
+                "deadline": "by noon",
+                "source_time": "[00:30]",
+            },
         ],
         "next_steps": [],
     }
-    verified = verify_notes(raw_notes, chunk_text, ["Unknown Speaker", "Bob"])
+    verified = verify_notes(raw_notes, chunk_text, ["Unknown Speaker", "Bob", "Unknown"])
     items = verified["action_items"]
-    assert len(items) == 2
+    assert len(items) == 3
 
     # Commitment by Unknown Speaker gives null owner
     assert items[0]["text"] == "Deploy build"
@@ -297,3 +303,8 @@ def test_verify_notes_unknown_speaker_commitment_gives_null():
     assert items[1]["text"] == "Take bug fix"
     assert items[1]["owner"] == "Bob"
     assert items[1]["deadline"] == "today"
+
+    # Commitment by Unknown gives null owner
+    assert items[2]["text"] == "Prepare release notes"
+    assert items[2]["owner"] is None
+    assert items[2]["deadline"] == "by noon"
