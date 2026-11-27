@@ -1,17 +1,29 @@
-# Environment files
+# ==============================================================================
+# Environment Files & Secrets (Never commit secrets)
+# ==============================================================================
 .env
 .env.*
-!.env.example
+*.env
 *.local
-Frontend/.env
 backend/.env
+Frontend/.env
 Backend/.env
 
+# Allow explicit environment templates
+!.env.example
+!**/.env.example
+
+# ==============================================================================
 # Dependencies
+# ==============================================================================
 node_modules/
 **/node_modules/
+.npm
+.pnpm-store
 
-# Build & Distribution
+# ==============================================================================
+# Build & Distribution Artifacts
+# ==============================================================================
 dist/
 dist-ssr/
 build/
@@ -19,20 +31,32 @@ build/
 **/dist-ssr/
 **/build/
 *.egg-info/
+*.egg
 
+# ==============================================================================
 # AI Models & Large Weights
+# ==============================================================================
 models/
+**/models/
 *.gguf
 *.bin
 *.pt
 *.pth
 *.onnx
+*.safetensors
+*.h5
+*.tflite
+*.mlmodel
 
+# ==============================================================================
 # Python & Virtual Environments
+# ==============================================================================
 __pycache__/
 **/__pycache__/
 *.py[cod]
 *$py.class
+*.pyd
+*.pyo
 .venv/
 venv/
 ENV/
@@ -43,10 +67,16 @@ env/
 **/.pytest_cache/
 .ruff_cache/
 **/.ruff_cache/
+.mypy_cache/
+**/.mypy_cache/
 .coverage
+.coverage.*
 htmlcov/
+pip-wheel-metadata/
 
-# Databases
+# ==============================================================================
+# Databases & SQLite Runtime Files
+# ==============================================================================
 *.db
 *.db-journal
 *.db-wal
@@ -54,7 +84,9 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
-# Media & Uploads
+# ==============================================================================
+# Media, Audio & Video Files
+# ==============================================================================
 media/
 backend/media/
 uploads/
@@ -66,12 +98,30 @@ uploads/
 *.m4a
 *.webm
 *.mov
+*.flac
+*.aac
+*.ogg
+*.mkv
+*.avi
+*.wma
 
-# Caches
+# ==============================================================================
+# Caches & Temporary Storage
+# ==============================================================================
 .cache/
 **/.cache/
+huggingface/
+.eslintcache
+tmp/
+temp/
+**/tmp/
+**/temp/
+*.tmp
+*.temp
 
+# ==============================================================================
 # Logs
+# ==============================================================================
 logs/
 *.log
 npm-debug.log*
@@ -80,14 +130,21 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# IDE & OS Files
+# ==============================================================================
+# IDE & Operating System Files
+# ==============================================================================
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea/
+*.swp
+*.swo
+*.sw?
 .DS_Store
 Thumbs.db
+desktop.ini
+ehthumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
